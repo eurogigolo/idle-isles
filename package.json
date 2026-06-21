@@ -1,0 +1,53 @@
+{
+  "name": "idle-isles",
+  "private": true,
+  "version": "0.0.0",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "eslint .",
+    "audit": "npm audit",
+    "preview": "vite preview",
+    "build:contracts": "hardhat build",
+    "test:contracts": "hardhat test",
+    "verify": "npm run lint && npm run audit && npm run build:contracts && npm run test:contracts && npm run build",
+    "deploy:megaeth": "hardhat --network megaethTestnet --build-profile production run scripts/deploy.ts"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.6.1",
+    "lucide-react": "^1.17.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "viem": "^2.52.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@nomicfoundation/hardhat-network-helpers": "^3.0.10",
+    "@nomicfoundation/hardhat-node-test-runner": "^3.0.17",
+    "@nomicfoundation/hardhat-viem": "^3.0.9",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "dotenv": "^17.4.2",
+    "eslint": "^10.3.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.6.0",
+    "hardhat": "^3.9.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.12"
+  },
+  "overrides": {
+    "esbuild": "0.28.1",
+    "undici": "6.27.0",
+    "ws": "8.21.0"
+  }
+}
