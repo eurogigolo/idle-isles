@@ -85,6 +85,7 @@ import {
   writeBuyOrder,
   writeCancelOrder,
   writeClaim,
+  writeConfigureCombatSafety,
   writeCreateOrder,
   writeCreateProfile,
   writeEatFood,
@@ -550,6 +551,31 @@ function App() {
         ...settings,
       },
     }))
+  }
+
+  async function saveChainCombatSafety() {
+    const settings = displayGame.combatSettings
+
+    if (settings.autoEat && !settings.foodItemId) {
+      const message = 'Select food for onchain auto-eat.'
+      setWalletNote(message)
+      pushChainLog(message)
+      return
+    }
+
+    await runChainTransaction(
+      (provider, activeAccount) =>
+        writeConfigureCombatSafety(provider, activeAccount, {
+          autoEat: settings.autoEat,
+          stopAtHitpoints: Math.max(
+            1,
+            Math.min(settings.stopAtHitpoints, Math.max(1, maxHitpoints - 1)),
+          ),
+          foodItemId: settings.foodItemId,
+          maxFoodPerSettle: settings.maxFoodPerClaim,
+        }),
+      'Chain safety saved.',
+    )
   }
 
   async function startActivity(activityId: ActivityId) {
@@ -1206,7 +1232,7 @@ function App() {
                   type="checkbox"
                   checked={displayGame.combatSettings.autoEat}
                   onChange={(event) => updateCombatSettings({ autoEat: event.target.checked })}
-                  disabled={isChainMode}
+                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
                 />
                 <span>Auto-eat</span>
               </label>
@@ -1218,7 +1244,10 @@ function App() {
                   onChange={(event) =>
                     updateCombatSettings({ foodItemId: (event.target.value as ItemId) || null })
                   }
-                  disabled={foodItems.length === 0 || isChainMode}
+                  disabled={
+                    foodItems.length === 0 ||
+                    (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
+                  }
                 >
                   {foodItems.map((itemId) => (
                     <option value={itemId} key={itemId}>
@@ -1241,7 +1270,7 @@ function App() {
                       stopAtHitpoints: Math.max(1, Math.floor(Number(event.target.value) || 1)),
                     })
                   }
-                  disabled={isChainMode}
+                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
                 />
               </label>
 
@@ -1258,9 +1287,21 @@ function App() {
                       maxFoodPerClaim: Math.max(1, Math.floor(Number(event.target.value) || 1)),
                     })
                   }
-                  disabled={isChainMode}
+                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
                 />
               </label>
+
+              {isChainMode && (
+                <button
+                  type="button"
+                  className="safety-action"
+                  onClick={() => void saveChainCombatSafety()}
+                  disabled={!chainSnapshot?.hasProfile || chainBusy}
+                >
+                  <Heart size={15} />
+                  <span>Save Chain Safety</span>
+                </button>
+              )}
             </div>
           </section>
 

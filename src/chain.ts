@@ -56,8 +56,11 @@ export interface ChainSnapshot {
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 export const CHAIN_SETTLE_CYCLE_LIMIT = 200
 const CHAIN_MARKET_SCAN_LIMIT = 120
+const CHAIN_SAFETY_DURATION_SECONDS = 7 * 24 * 60 * 60
+const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000'
 const GAS_BUFFER_BPS = 5_000n
 const MIN_GAS_BUFFER = 100_000n
+const CONTRACT_FOOD_ITEMS = new Set<ItemId>(['cookedMinnow', 'cookedTrout'])
 
 export const MEGAETH_TESTNET_PARAMS = {
   chainId: MEGAETH_CHAIN_ID_HEX,
@@ -98,6 +101,8 @@ const idleIslesAbi = parseAbi([
   'function buy(uint256 orderId, uint64 amount)',
   'function claim()',
   'function cancelOrder(uint256 orderId)',
+  'function clearAutoSettle()',
+  'function configureAutoSettle(address operator, uint64 expiresAt, uint16 maxCyclesPerSettle, uint16 stopAtHp, bool autoEat, uint16 maxFoodPerSettle, uint256 foodItemId)',
   'function createOrder(uint256 itemId, uint64 amount, uint128 priceEach)',
   'function createProfile()',
   'function currentAreaId(address player) view returns (uint8)',
@@ -123,6 +128,19 @@ type IdleIslesWriteRequest =
   | { functionName: 'buy'; args: readonly [orderId: bigint, amount: bigint] }
   | { functionName: 'cancelOrder'; args: readonly [orderId: bigint] }
   | { functionName: 'claim'; args: readonly [] }
+  | { functionName: 'clearAutoSettle'; args: readonly [] }
+  | {
+      functionName: 'configureAutoSettle'
+      args: readonly [
+        operator: Address,
+        expiresAt: bigint,
+        maxCyclesPerSettle: number,
+        stopAtHp: number,
+        autoEat: boolean,
+        maxFoodPerSettle: number,
+        foodItemId: bigint,
+      ]
+    }
   | { functionName: 'createOrder'; args: readonly [itemId: bigint, amount: bigint, priceEach: bigint] }
   | { functionName: 'createProfile'; args: readonly [] }
   | { functionName: 'eatFood'; args: readonly [itemId: bigint] }
@@ -359,6 +377,42 @@ export async function writeEatFood(
   return writeIdleIslesContract(provider, account, {
     functionName: 'eatFood',
     args: [getContractItemId(itemId)],
+  })
+}
+
+export async function writeConfigureCombatSafety(
+  provider: BrowserEthereumProvider,
+  account: Address,
+  settings: {
+    autoEat: boolean
+    stopAtHitpoints: number
+    foodItemId: ItemId | null
+    maxFoodPerSettle: number
+  },
+) {
+  if (
+    settings.autoEat &&
+    (!settings.foodItemId || !CONTRACT_FOOD_ITEMS.has(settings.foodItemId))
+  ) {
+    throw new Error('Select cooked Minnow or cooked Trout for onchain auto-eat.')
+  }
+
+  const latestBlock = await publicClient.getBlock()
+  const expiresAt = latestBlock.timestamp + BigInt(CHAIN_SAFETY_DURATION_SECONDS)
+  const foodItemId =
+    settings.autoEat && settings.foodItemId ? getContractItemId(settings.foodItemId) : 0n
+
+  return writeIdleIslesContract(provider, account, {
+    functionName: 'configureAutoSettle',
+    args: [
+      ZERO_ADDRESS,
+      expiresAt,
+      CHAIN_SETTLE_CYCLE_LIMIT,
+      settings.stopAtHitpoints,
+      settings.autoEat,
+      settings.maxFoodPerSettle,
+      foodItemId,
+    ],
   })
 }
 
