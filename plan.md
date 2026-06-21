@@ -12,13 +12,13 @@ As of the latest implementation pass:
 - Contract architecture is split into `IdleIsles` for state/settlement and immutable `IdleIslesContent` for static item/combat lookups.
 - Onchain gameplay currently supports profile creation, area travel, combat settlement, equipment burn/remint, death penalties, marketplace list/buy/cancel, Ash Grove, Copper Ridge, Tin Hollow, River Bend, Wood Armory, Copper Smelter, Copper Dagger, and Cook Minnow.
 - Starter food loop is onchain: Raw Minnow can be fished, Cook Minnow can burn or produce Cooked Minnow, raw fish cannot heal, Cooked Minnow heals, and combat auto-eat can consume gameplay-created food.
-- Verification commands currently pass: `npm.cmd run build:contracts`, `npm.cmd run test:contracts`, `npm.cmd run build`, and `npm.cmd run lint`.
+- Verification commands currently pass through `npm.cmd run verify`, including linting, audit, content ID validation, Solidity build, bytecode budget checks, contract tests, and frontend build.
 - Contract tests currently pass at 17 Node test-runner tests.
-- Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+- Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`; `IdleIsles` is capped by a 24,200-byte project budget in CI.
 - Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS`, for profile reads, balances, area travel, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
 - MegaETH deployment config and `npm run deploy:megaeth` now deploy `IdleIslesContent` followed by `IdleIsles`, then write `deployments/megaeth-testnet.json` with the frontend contract address.
 
-Recommended next build step: wire auto-settle configuration into Chain mode or continue porting higher-tier contract content.
+Recommended next build step: extract core gameplay content into structured data and generate TypeScript/chain/test fixtures before adding more contract settlement branches.
 
 ## 1. Core Gameplay Goals
 

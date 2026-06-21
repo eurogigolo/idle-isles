@@ -20,8 +20,9 @@ Run this before opening a pull request:
 npm run verify
 ```
 
-The verification script includes dependency audit and intentionally runs Hardhat build and tests
-sequentially. Running multiple Hardhat compile/test commands in parallel can race on the local cache.
+The verification script includes dependency audit, content ID validation, bytecode budget checks, and
+intentionally runs Hardhat build and tests sequentially. Running multiple Hardhat compile/test
+commands in parallel can race on the local cache.
 
 ## Gameplay Changes
 
@@ -29,6 +30,7 @@ For content or rules changes, keep the duplicated alpha sources aligned:
 
 - `src/game.ts` for local gameplay.
 - `src/chain.ts` for frontend contract ID mappings.
+- `content/core/ids.json` for namespaced/numeric ID registry changes.
 - `contracts/IdleIsles.sol` and `contracts/IdleIslesContent.sol` for onchain behavior.
 - `test/IdleIsles.ts` for contract coverage.
 - `solidity-notes.md` for contract-facing design notes.

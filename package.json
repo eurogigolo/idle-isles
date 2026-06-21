@@ -13,10 +13,12 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "audit": "npm audit",
+    "content:check": "node scripts/check-content-ids.mjs",
     "preview": "vite preview",
     "build:contracts": "hardhat build",
+    "bytecode:contracts": "node scripts/check-bytecode-size.mjs",
     "test:contracts": "hardhat test",
-    "verify": "npm run lint && npm run audit && npm run build:contracts && npm run test:contracts && npm run build",
+    "verify": "npm run lint && npm run audit && npm run content:check && npm run build:contracts && npm run bytecode:contracts && npm run test:contracts && npm run build",
     "deploy:megaeth": "hardhat --network megaethTestnet --build-profile production run scripts/deploy.ts"
   },
   "dependencies": {
