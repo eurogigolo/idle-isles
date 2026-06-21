@@ -55,7 +55,6 @@ import {
   eatFood,
   formatDuration,
   getMarketCategory,
-  getActivityLock,
   getActivityLocks,
   getBurnChance,
   getClaimPreview,
@@ -72,14 +71,21 @@ import {
   travelToArea,
 } from './game'
 import {
+  CHAIN_COMBAT_SETTLE_CYCLE_LIMIT,
   CHAIN_SETTLE_CYCLE_LIMIT,
   MEGAETH_CHAIN_ID_HEX,
   MEGAETH_TESTNET_PARAMS,
+  MOSS_GAMEPLAY_SESSION_SECONDS,
   type BrowserEthereumProvider,
   type ChainSnapshot,
+  connectMossWallet,
   getContractActivity,
   getChainOrderId,
   getIdleIslesAddress,
+  getMossWalletStatus,
+  grantMossGameplaySession,
+  hasMossGameplaySession,
+  initialiseMossWallet,
   readChainSnapshot,
   toAddress,
   writeBuyOrder,
@@ -91,10 +97,23 @@ import {
   writeCreateProfile,
   writeEatFood,
   writeEquip,
+  writeMossBuyOrder,
+  writeMossCancelOrder,
+  writeMossClaim,
+  writeMossClearCombatSafety,
+  writeMossConfigureCombatSafety,
+  writeMossCreateOrder,
+  writeMossCreateProfile,
+  writeMossEatFood,
+  writeMossEquip,
+  writeMossStartActivity,
+  writeMossTravelToArea,
+  writeMossUnequip,
   writeStartActivity,
   writeTravelToArea,
   writeUnequip,
 } from './chain'
+import { GameScene, type GameSceneAction } from './GameScene'
 import './App.css'
 
 declare global {
@@ -192,6 +211,7 @@ const ITEM_ICONS: Record<ItemId, LucideIcon> = {
 }
 
 type ActivitySubtabGroup = Extract<ActivityGroup, 'Gather' | 'Artisan'>
+type WalletMode = 'injected' | 'moss'
 const RESOURCE_GROUPS: ActivitySubtabGroup[] = ['Gather', 'Artisan']
 const ACTIVITY_SUBTABS: Record<ActivitySubtabGroup, SkillId[]> = {
   Gather: ['woodcutting', 'fishing', 'mining'],
@@ -259,9 +279,12 @@ function App() {
     Gather: 'woodcutting',
     Artisan: 'smithing',
   })
+  const [walletMode, setWalletMode] = useState<WalletMode>('injected')
   const [account, setAccount] = useState<Address | null>(null)
   const [chainId, setChainId] = useState<string | null>(null)
   const [walletNote, setWalletNote] = useState('Local profile')
+  const [mossReady, setMossReady] = useState(false)
+  const [mossSessionReady, setMossSessionReady] = useState(false)
   const [chainSnapshot, setChainSnapshot] = useState<ChainSnapshot | null>(null)
   const [chainLoading, setChainLoading] = useState(false)
   const [chainBusy, setChainBusy] = useState(false)
@@ -351,6 +374,9 @@ function App() {
     chainLoading,
     chainSnapshot,
     isChainMode,
+    mossReady,
+    mossSessionReady,
+    walletMode,
   })
 
   useEffect(() => {
@@ -462,7 +488,50 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!window.ethereum?.on) {
+    if (walletMode !== 'moss') {
+      return
+    }
+
+    let cancelled = false
+
+    async function prepareMoss() {
+      try {
+        await initialiseMossWallet()
+        const status = await getMossWalletStatus()
+
+        if (cancelled) {
+          return
+        }
+
+        setMossReady(true)
+        if (status.status === 'connected') {
+          const address = toAddress(status.address)
+          setAccount(address)
+          setChainId(MEGAETH_CHAIN_ID_HEX)
+          setWalletNote(address ? 'MOSS linked' : 'Connect MOSS')
+          if (address) {
+            setMossSessionReady(await hasMossGameplaySession(address))
+          }
+        } else if (isChainMode) {
+          setWalletNote('Connect MOSS')
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMossReady(false)
+          setWalletNote(formatChainError(error))
+        }
+      }
+    }
+
+    void prepareMoss()
+
+    return () => {
+      cancelled = true
+    }
+  }, [isChainMode, walletMode])
+
+  useEffect(() => {
+    if (walletMode !== 'injected' || !window.ethereum?.on) {
       return
     }
 
@@ -482,7 +551,7 @@ function App() {
       window.ethereum?.removeListener?.('accountsChanged', handleAccounts)
       window.ethereum?.removeListener?.('chainChanged', handleChain)
     }
-  }, [])
+  }, [walletMode])
 
   useEffect(() => {
     if (!isChainMode) {
@@ -542,6 +611,47 @@ function App() {
     setGame((current) => pushLog(message, current))
   }
 
+  function selectPlayMode(nextMode: PlayMode) {
+    setPlayMode(nextMode)
+
+    if (nextMode !== 'chain') {
+      return
+    }
+
+    if (walletMode === 'moss') {
+      setChainId(MEGAETH_CHAIN_ID_HEX)
+      setWalletNote(account ? 'MOSS linked' : 'Connect MOSS')
+      return
+    }
+
+    setWalletNote(account ? 'Wallet linked' : 'Connect wallet for chain profile')
+  }
+
+  function selectWalletMode(nextMode: WalletMode) {
+    if (nextMode === walletMode) {
+      return
+    }
+
+    setWalletMode(nextMode)
+    setAccount(null)
+    setChainSnapshot(null)
+    setMossSessionReady(false)
+    setMossReady(false)
+
+    if (nextMode === 'moss') {
+      setChainId(MEGAETH_CHAIN_ID_HEX)
+      if (isChainMode) {
+        setWalletNote('Connect MOSS')
+      }
+      return
+    }
+
+    setChainId(null)
+    if (isChainMode) {
+      setWalletNote('Connect wallet for chain profile')
+    }
+  }
+
   async function refreshChainState() {
     if (!account) {
       setWalletNote('Connect wallet for chain profile')
@@ -569,8 +679,55 @@ function App() {
   async function runChainTransaction(
     action: (provider: BrowserEthereumProvider, account: Address) => Promise<unknown>,
     successMessage: string,
-    options: { requiresProfile?: boolean } = {},
+    options: {
+      requiresProfile?: boolean
+      mossAction?: (account: Address) => Promise<unknown>
+    } = {},
   ) {
+    if (walletMode === 'moss') {
+      if (!account) {
+        setWalletNote('Connect MOSS for chain mode')
+        return
+      }
+
+      if (!chainAddress) {
+        setWalletNote('Set VITE_IDLE_ISLES_ADDRESS')
+        return
+      }
+
+      if ((options.requiresProfile ?? true) && !chainSnapshot?.hasProfile) {
+        const message = 'Create onchain profile first.'
+        setWalletNote(message)
+        pushChainLog(message)
+        return
+      }
+
+      if (!options.mossAction) {
+        const message = 'This action still requires MetaMask.'
+        setWalletNote(message)
+        pushChainLog(message)
+        return
+      }
+
+      setChainBusy(true)
+      setWalletNote(mossSessionReady ? 'Sending with MOSS' : 'Confirm in MOSS')
+
+      try {
+        await options.mossAction(account)
+        setWalletNote(successMessage)
+        pushChainLog(successMessage)
+        setMossSessionReady(await hasMossGameplaySession(account))
+        await refreshChainState()
+      } catch (error) {
+        const message = formatChainError(error)
+        setWalletNote(message)
+        pushChainLog(message)
+      } finally {
+        setChainBusy(false)
+      }
+      return
+    }
+
     if (!window.ethereum) {
       setWalletNote('No injected wallet')
       return
@@ -652,12 +809,15 @@ function App() {
   async function createChainProfile() {
     await runChainTransaction(writeCreateProfile, 'Profile created onchain.', {
       requiresProfile: false,
+      mossAction: () => writeMossCreateProfile(),
     })
   }
 
   async function claim() {
     if (isChainMode) {
-      await runChainTransaction(writeClaim, 'Claim confirmed onchain.')
+      await runChainTransaction(writeClaim, 'Claim confirmed onchain.', {
+        mossAction: () => writeMossClaim(),
+      })
       return
     }
 
@@ -699,6 +859,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeClearCombatSafety(provider, activeAccount),
         'Auto-eat disabled. Combat can now continue past Stop HP.',
+        {
+          mossAction: () => writeMossClearCombatSafety(),
+        },
       )
       return
     }
@@ -715,6 +878,18 @@ function App() {
           maxFoodPerSettle: settings.maxFoodPerClaim,
         }),
       'Chain safety saved.',
+      {
+        mossAction: () =>
+          writeMossConfigureCombatSafety({
+            autoEat: settings.autoEat,
+            stopAtHitpoints: Math.max(
+              1,
+              Math.min(settings.stopAtHitpoints, Math.max(1, maxHitpoints - 1)),
+            ),
+            foodItemId: settings.foodItemId,
+            maxFoodPerSettle: settings.maxFoodPerClaim,
+          }),
+      },
     )
   }
 
@@ -734,9 +909,20 @@ function App() {
         return
       }
 
+      const locks = getActivityLocks(activity, displayGame)
+      if (locks.length > 0) {
+        const message = `${activity.name} requires ${locks.join(', ')}.`
+        setWalletNote(message)
+        pushChainLog(message)
+        return
+      }
+
       await runChainTransaction(
         (provider, activeAccount) => writeStartActivity(provider, activeAccount, activityId),
         `Started ${activity.name} onchain.`,
+        {
+          mossAction: () => writeMossStartActivity(activityId),
+        },
       )
       return
     }
@@ -744,10 +930,10 @@ function App() {
     setGame((current) => {
       const result = applyClaim(current, Date.now())
       const activity = ACTIVITY_BY_ID[activityId]
-      const lock = getActivityLock(activity, result.state)
+      const locks = getActivityLocks(activity, result.state)
 
-      if (lock) {
-        return pushLog(`${activity.name} requires ${lock}.`, result.state)
+      if (locks.length > 0) {
+        return pushLog(`${activity.name} requires ${locks.join(', ')}.`, result.state)
       }
 
       const next = {
@@ -774,6 +960,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeEquip(provider, activeAccount, itemId),
         `Equipped ${item.name} onchain.`,
+        {
+          mossAction: () => writeMossEquip(itemId),
+        },
       )
       return
     }
@@ -810,6 +999,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeUnequip(provider, activeAccount, slotIndex),
         `Unequipped ${ITEMS[itemId].name} onchain.`,
+        {
+          mossAction: () => writeMossUnequip(slotIndex),
+        },
       )
       return
     }
@@ -840,6 +1032,10 @@ function App() {
         (provider, activeAccount) =>
           writeCreateOrder(provider, activeAccount, itemId, quantity, unitPrice),
         `Listed ${quantity} ${ITEMS[itemId].name} onchain.`,
+        {
+          mossAction: (activeAccount) =>
+            writeMossCreateOrder(activeAccount, itemId, quantity, unitPrice),
+        },
       )
       return
     }
@@ -889,6 +1085,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeBuyOrder(provider, activeAccount, chainOrderId),
         `Bought 1 ${ITEMS[order.itemId].name} onchain.`,
+        {
+          mossAction: (activeAccount) => writeMossBuyOrder(activeAccount, chainOrderId),
+        },
       )
       return
     }
@@ -958,6 +1157,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeCancelOrder(provider, activeAccount, chainOrderId),
         `Cancelled ${ITEMS[order.itemId].name} listing onchain.`,
+        {
+          mossAction: () => writeMossCancelOrder(chainOrderId),
+        },
       )
       return
     }
@@ -996,6 +1198,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeEatFood(provider, activeAccount, itemId),
         `Ate ${item.name} onchain.`,
+        {
+          mossAction: () => writeMossEatFood(itemId),
+        },
       )
       return
     }
@@ -1012,6 +1217,24 @@ function App() {
   }
 
   async function connectWallet() {
+    if (walletMode === 'moss') {
+      try {
+        const address = await connectMossWallet()
+        if (!address) {
+          setWalletNote('MOSS connection cancelled')
+          return
+        }
+
+        setAccount(address)
+        setChainId(MEGAETH_CHAIN_ID_HEX)
+        setMossSessionReady(await hasMossGameplaySession(address))
+        setWalletNote('MOSS linked')
+      } catch (error) {
+        setWalletNote(formatChainError(error))
+      }
+      return
+    }
+
     if (!window.ethereum) {
       setWalletNote('No injected wallet')
       return
@@ -1034,6 +1257,12 @@ function App() {
   }
 
   async function addMegaEth() {
+    if (walletMode === 'moss') {
+      setChainId(MEGAETH_CHAIN_ID_HEX)
+      setWalletNote('MOSS uses MegaETH Testnet')
+      return
+    }
+
     if (!window.ethereum) {
       setWalletNote('No injected wallet')
       return
@@ -1051,6 +1280,39 @@ function App() {
     }
   }
 
+  async function enableMossGameplaySession() {
+    if (walletMode !== 'moss') {
+      setWalletNote('Select MOSS first')
+      return
+    }
+
+    if (!account) {
+      setWalletNote('Connect MOSS first')
+      return
+    }
+
+    if (!chainAddress) {
+      setWalletNote('Set VITE_IDLE_ISLES_ADDRESS')
+      return
+    }
+
+    setChainBusy(true)
+    setWalletNote('Approve MOSS gameplay session')
+
+    try {
+      await grantMossGameplaySession()
+      setMossSessionReady(await hasMossGameplaySession(account))
+      setWalletNote(`MOSS gameplay session ready for ${formatDuration(MOSS_GAMEPLAY_SESSION_SECONDS * 1000)}`)
+      pushChainLog('MOSS gameplay session approved.')
+    } catch (error) {
+      const message = formatChainError(error)
+      setWalletNote(message)
+      pushChainLog(message)
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
   async function sailToArea(areaId: AreaId) {
     if (isChainMode) {
       const area = AREA_BY_ID[areaId]
@@ -1062,6 +1324,9 @@ function App() {
       await runChainTransaction(
         (provider, activeAccount) => writeTravelToArea(provider, activeAccount, areaId),
         message,
+        {
+          mossAction: () => writeMossTravelToArea(areaId),
+        },
       )
       return
     }
@@ -1115,26 +1380,61 @@ function App() {
             <button
               type="button"
               className={playMode === 'local' ? 'selected' : ''}
-              onClick={() => setPlayMode('local')}
+              onClick={() => selectPlayMode('local')}
             >
               Local
             </button>
             <button
               type="button"
               className={playMode === 'chain' ? 'selected' : ''}
-              onClick={() => setPlayMode('chain')}
+              onClick={() => selectPlayMode('chain')}
             >
               Chain
             </button>
           </div>
+          <div className="mode-switch" aria-label="Wallet mode">
+            <button
+              type="button"
+              className={walletMode === 'injected' ? 'selected' : ''}
+              onClick={() => selectWalletMode('injected')}
+            >
+              MetaMask
+            </button>
+            <button
+              type="button"
+              className={walletMode === 'moss' ? 'selected' : ''}
+              onClick={() => selectWalletMode('moss')}
+            >
+              MOSS
+            </button>
+          </div>
           <button type="button" className="icon-text-button" onClick={connectWallet}>
             <Wallet size={17} />
-            <span>{account ? shortAddress(account) : 'Connect'}</span>
+            <span>
+              {account ? shortAddress(account) : walletMode === 'moss' ? 'Connect MOSS' : 'Connect'}
+            </span>
           </button>
           <button type="button" className="icon-text-button secondary" onClick={addMegaEth}>
             <Landmark size={17} />
-            <span>{chainId === MEGAETH_CHAIN_ID_HEX ? 'MegaETH' : 'Network'}</span>
+            <span>
+              {walletMode === 'moss'
+                ? 'MOSS Testnet'
+                : chainId === MEGAETH_CHAIN_ID_HEX
+                  ? 'MegaETH'
+                  : 'Network'}
+            </span>
           </button>
+          {isChainMode && walletMode === 'moss' && (
+            <button
+              type="button"
+              className="icon-text-button chain-action"
+              onClick={() => void enableMossGameplaySession()}
+              disabled={!account || !chainAddress || chainBusy || !mossReady}
+            >
+              <Sparkles size={17} />
+              <span>{mossSessionReady ? 'Session Ready' : 'Gameplay Session'}</span>
+            </button>
+          )}
           {isChainMode && (
             <button
               type="button"
@@ -1901,7 +2201,7 @@ function createChainWelcomeBackReport(
     return null
   }
 
-  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
+  const claimableCycles = Math.min(totalReadyCycles, getChainSettleCycleLimit(activity))
   const lines: WelcomeBackLine[] = [
     {
       tone: 'neutral',
@@ -2080,44 +2380,49 @@ function ActivityScene({
   activity: ActivityDefinition | null
   preview: ClaimPreview
 }) {
-  const scene = activity?.scene ?? 'forest'
-  const activityClass = activity ? `activity-${activity.id}` : 'activity-camp'
+  const action = getGameSceneAction(activity)
 
   return (
-    <div className={`activity-scene scene-${scene} ${activityClass}`}>
-      <div className="skyline" />
-      <div className="cloud cloud-a" />
-      <div className="cloud cloud-b" />
-      <div className="far-land" />
-      <div className="near-land" />
-      <div className="scene-prop prop-a" />
-      <div className="scene-prop prop-b" />
-      <div className="action-target" aria-hidden="true">
-        <span className="target-core" />
-        <span className="target-detail detail-a" />
-        <span className="target-detail detail-b" />
-      </div>
-      <div className="action-effects" aria-hidden="true">
-        <span className="effect effect-a" />
-        <span className="effect effect-b" />
-        <span className="effect effect-c" />
-      </div>
-      <div className="loot-pop" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="adventurer">
-        <span className="helm" />
-        <span className="body" />
-        <span className="tool" />
-        <span className="offhand" />
-      </div>
-      <div className="scene-progress">
+    <>
+      <GameScene
+        action={action}
+        area={activity?.name ?? 'Hearth Camp'}
+        isActive={Boolean(activity)}
+        progress={preview.progressPct}
+      />
+      <div className={`scene-progress progress-${action}`}>
         <span style={{ width: `${preview.progressPct}%` }} />
       </div>
-    </div>
+    </>
   )
+}
+
+function getGameSceneAction(activity: ActivityDefinition | null): GameSceneAction {
+  if (!activity) {
+    return 'idle'
+  }
+
+  if (activity.group === 'Combat') {
+    return 'combat'
+  }
+
+  if (activity.group === 'Artisan') {
+    return 'smelting'
+  }
+
+  if (activity.primarySkill === 'woodcutting') {
+    return 'woodcutting'
+  }
+
+  if (activity.primarySkill === 'fishing') {
+    return 'fishing'
+  }
+
+  if (activity.primarySkill === 'mining') {
+    return 'mining'
+  }
+
+  return 'idle'
 }
 
 function formatMap(map?: Partial<Record<ItemId, number>>) {
@@ -2185,7 +2490,7 @@ function getChainPreview(
   const cycleMs = activity?.cycleMs ?? 0
   const elapsedMs = getChainElapsedMs(snapshot, activity, now)
   const totalReadyCycles = getChainReadyCycles(snapshot, activity, now)
-  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
+  const claimableCycles = Math.min(totalReadyCycles, getChainSettleCycleLimit(activity))
 
   return {
     cycles: claimableCycles,
@@ -2221,6 +2526,10 @@ function getChainReadyCycles(
   return Math.floor(getChainElapsedMs(snapshot, activity, now) / activity.cycleMs)
 }
 
+function getChainSettleCycleLimit(activity: ActivityDefinition | null) {
+  return activity?.combat ? CHAIN_COMBAT_SETTLE_CYCLE_LIMIT : CHAIN_SETTLE_CYCLE_LIMIT
+}
+
 function getChainElapsedMs(
   snapshot: ChainSnapshot,
   activity: ActivityDefinition | null,
@@ -2249,6 +2558,9 @@ function getChainStatus({
   chainLoading,
   chainSnapshot,
   isChainMode,
+  mossReady,
+  mossSessionReady,
+  walletMode,
 }: {
   account: Address | null
   chainAddress: Address | null
@@ -2256,6 +2568,9 @@ function getChainStatus({
   chainLoading: boolean
   chainSnapshot: ChainSnapshot | null
   isChainMode: boolean
+  mossReady: boolean
+  mossSessionReady: boolean
+  walletMode: WalletMode
 }) {
   if (!isChainMode) {
     return 'MegaETH available'
@@ -2263,6 +2578,30 @@ function getChainStatus({
 
   if (!chainAddress) {
     return 'No contract address'
+  }
+
+  if (walletMode === 'moss') {
+    if (!mossReady) {
+      return 'MOSS loading'
+    }
+
+    if (!account) {
+      return 'MOSS needed'
+    }
+
+    if (chainLoading) {
+      return 'Reading chain'
+    }
+
+    if (!chainSnapshot) {
+      return 'Ready to read'
+    }
+
+    if (!chainSnapshot.hasProfile) {
+      return 'Profile not minted'
+    }
+
+    return mossSessionReady ? 'MOSS session' : 'MOSS connected'
   }
 
   if (!account) {
@@ -2284,6 +2623,31 @@ function getChainStatus({
   return chainSnapshot.hasProfile ? 'MegaETH connected' : 'Profile not minted'
 }
 
+const CHAIN_ERROR_MESSAGES: Array<[string, string]> = [
+  ['MaterialLow', 'Missing required materials for this onchain action.'],
+  ['0x5f650d49', 'Missing required materials for this onchain action.'],
+  ['RequirementLow', 'Skill level is too low for this onchain action.'],
+  ['0x74f6efc6', 'Skill level is too low for this onchain action.'],
+  [
+    'BadActivity',
+    'This activity is not supported by the deployed contract. Redeploy the latest contracts and update the frontend address.',
+  ],
+  [
+    '0x2614c336',
+    'This activity is not supported by the deployed contract. Redeploy the latest contracts and update the frontend address.',
+  ],
+  ['AreaLocked', 'Unlock that area before starting this onchain activity.'],
+  ['0xbec53eb8', 'Unlock that area before starting this onchain activity.'],
+  ['AreaRequired', 'Sail to that area before starting this onchain activity.'],
+  ['0xc1266fd9', 'Sail to that area before starting this onchain activity.'],
+  ['EquipmentRequired', 'Required equipment is missing for this onchain activity.'],
+  ['0x80258ce6', 'Required equipment is missing for this onchain activity.'],
+  ['NoHp', 'Your character has 0 HP. Heal before starting this onchain action.'],
+  ['0x626c4fda', 'Your character has 0 HP. Heal before starting this onchain action.'],
+  ['NoProfile', 'Create onchain profile first.'],
+  ['0x6f860927', 'Create onchain profile first.'],
+]
+
 function formatChainError(error: unknown): string {
   const details = error as { shortMessage?: unknown; message?: unknown }
   const message =
@@ -2292,6 +2656,11 @@ function formatChainError(error: unknown): string {
       : typeof details.message === 'string'
         ? details.message
         : 'Chain request failed'
+  const knownError = CHAIN_ERROR_MESSAGES.find(([needle]) => message.includes(needle))
+
+  if (knownError) {
+    return knownError[1]
+  }
 
   return message.split('\n')[0].slice(0, 110)
 }

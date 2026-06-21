@@ -13,6 +13,11 @@ const contracts = [
     artifactPath: 'artifacts/contracts/IdleIslesContent.sol/IdleIslesContent.json',
     budget: 12_000,
   },
+  {
+    name: 'HoardHall',
+    artifactPath: 'artifacts/contracts/HoardHall.sol/HoardHall.json',
+    budget: 8_000,
+  },
 ]
 
 let failed = false

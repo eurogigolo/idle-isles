@@ -35,6 +35,11 @@ interface IIdleIslesContent {
     function itemSlot(uint256 itemId) external pure returns (bool equippable, uint8 slot);
     function itemStatsOf(uint256 itemId) external pure returns (Stats memory stats);
     function healAmount(uint256 itemId) external pure returns (uint16);
+    function getGatherActivity(uint16 activityId) external pure returns (uint256 config);
+    function getArtisanActivity(uint16 activityId)
+        external
+        pure
+        returns (uint256 config, uint256 costs, uint256 rewards);
     function getCombatActivity(uint16 activityId)
         external
         pure

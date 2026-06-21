@@ -409,6 +409,15 @@ h2 {
   box-shadow: var(--shadow);
 }
 
+.game-scene-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #151917;
+}
+
 .activity-scene {
   position: absolute;
   inset: 0;
@@ -1534,6 +1543,30 @@ h2 {
     0 0 0 2px rgba(10, 13, 12, 0.18),
     0 10px 22px rgba(0, 0, 0, 0.22);
   z-index: 12;
+}
+
+.scene-progress.progress-idle span {
+  background: linear-gradient(90deg, #226c5b, #d4a72c);
+}
+
+.scene-progress.progress-woodcutting span {
+  background: linear-gradient(90deg, #246f52, #75a85f);
+}
+
+.scene-progress.progress-fishing span {
+  background: linear-gradient(90deg, #2f7f8f, #9cc8bb);
+}
+
+.scene-progress.progress-mining span {
+  background: linear-gradient(90deg, #c66f38, #f0c25e);
+}
+
+.scene-progress.progress-smelting span {
+  background: linear-gradient(90deg, #9c2e43, #ffbd55);
+}
+
+.scene-progress.progress-combat span {
+  background: linear-gradient(90deg, #7a2639, #e45f63);
 }
 
 .scene-hud {

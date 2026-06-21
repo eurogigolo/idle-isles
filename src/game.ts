@@ -2455,6 +2455,14 @@ export function getActivityLocks(
     locks.push(ITEMS[activity.requiredEquipment].name)
   }
 
+  for (const [itemId, amount] of Object.entries(activity.costs ?? {})) {
+    const requiredAmount = amount ?? 0
+    const currentAmount = state.inventory[itemId as ItemId] ?? 0
+    if (requiredAmount > 0 && currentAmount < requiredAmount) {
+      locks.push(`${requiredAmount} ${ITEMS[itemId as ItemId].name}`)
+    }
+  }
+
   return locks
 }
 

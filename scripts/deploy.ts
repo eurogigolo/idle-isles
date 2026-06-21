@@ -22,9 +22,13 @@ interface DeploymentRecord {
     IdleIsles: ContractDeployment & {
       constructorArgs: [string, Address];
     };
+    HoardHall: ContractDeployment & {
+      constructorArgs: [Address];
+    };
   };
   frontendEnv: {
     VITE_IDLE_ISLES_ADDRESS: Address;
+    VITE_HOARD_HALL_ADDRESS: Address;
   };
 }
 
@@ -77,6 +81,19 @@ async function main() {
     const gameAddress = requireContractAddress(gameTx.contract.address, gameReceipt, "IdleIsles");
     console.log(`IdleIsles: ${gameAddress}`);
 
+    console.log("Deploying HoardHall...");
+    const hoardHallTx = await viem.sendDeploymentTransaction("HoardHall", [gameAddress]);
+    const hoardHallReceipt = await publicClient.waitForTransactionReceipt({
+      hash: hoardHallTx.deploymentTransaction.hash,
+      confirmations,
+    });
+    const hoardHallAddress = requireContractAddress(
+      hoardHallTx.contract.address,
+      hoardHallReceipt,
+      "HoardHall",
+    );
+    console.log(`HoardHall: ${hoardHallAddress}`);
+
     const deployment: DeploymentRecord = {
       network: connection.networkName,
       chainId,
@@ -93,9 +110,18 @@ async function main() {
           ...formatDeployment(gameAddress, gameTx.deploymentTransaction.hash, gameReceipt),
           constructorArgs: [metadataUri, contentAddress],
         },
+        HoardHall: {
+          ...formatDeployment(
+            hoardHallAddress,
+            hoardHallTx.deploymentTransaction.hash,
+            hoardHallReceipt,
+          ),
+          constructorArgs: [gameAddress],
+        },
       },
       frontendEnv: {
         VITE_IDLE_ISLES_ADDRESS: gameAddress,
+        VITE_HOARD_HALL_ADDRESS: hoardHallAddress,
       },
     };
 
@@ -107,6 +133,7 @@ async function main() {
 
     console.log(`Deployment written to ${outputPath}`);
     console.log(`Set VITE_IDLE_ISLES_ADDRESS=${gameAddress}`);
+    console.log(`Set VITE_HOARD_HALL_ADDRESS=${hoardHallAddress}`);
   } finally {
     await connection.close();
   }

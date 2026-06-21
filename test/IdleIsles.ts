@@ -8,6 +8,7 @@ describe("IdleIsles", async function () {
   const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
   const CROWNS = 1n;
   const ASH_LOG = 2n;
+  const PINE_LOG = 3n;
   const RAW_MINNOW = 8n;
   const COOKED_MINNOW = 9n;
   const COPPER_ORE = 30n;
@@ -20,16 +21,21 @@ describe("IdleIsles", async function () {
   const BARK_LEGGINGS = 65n;
   const HIDE = 70n;
   const FIELD_CHARM = 71n;
+  const LEATHER_COWL = 80n;
   const TRAINING_YARD = 101;
   const CAVE_BAT = 104;
   const ASH_GROVE = 201;
   const COPPER_RIDGE = 202;
   const TIN_HOLLOW = 203;
   const RIVER_BEND = 204;
+  const PINE_STAND = 205;
+  const TUNGSTEN_LODE = 217;
   const WOOD_ARMORY = 301;
   const COPPER_SMELTER = 302;
   const COPPER_DAGGER_FORGE = 303;
   const COOK_MINNOW = 304;
+  const BARK_LEGGINGS_CRAFT = 305;
+  const CRAFT_LEATHER_COWL = 320;
   const SLOT_WEAPON = 0;
   const SLOT_CHEST = 3;
   const SLOT_LEGS = 4;
@@ -40,6 +46,12 @@ describe("IdleIsles", async function () {
   async function deployIdleIsles() {
     const content = await viem.deployContract("IdleIslesContent");
     return viem.deployContract("IdleIsles", ["ipfs://idle-isles/{id}.json", content.address]);
+  }
+
+  async function deployIdleIslesWithHoardHall() {
+    const game = await deployIdleIsles();
+    const hoardHall = await viem.deployContract("HoardHall", [game.address]);
+    return { game, hoardHall };
   }
 
   async function craftStarterGear(game: Awaited<ReturnType<typeof deployIdleIsles>>) {
@@ -75,6 +87,35 @@ describe("IdleIsles", async function () {
     await game.write.claim();
   }
 
+  function decodeRecipePair(packedItems: bigint, index: number) {
+    const pair = (packedItems >> BigInt(index * 32)) & 0xffffffffn;
+    return {
+      itemId: pair & 0xffffn,
+      amount: (pair >> 16n) & 0xffffn,
+    };
+  }
+
+  function decodeRecipeConfig(config: bigint) {
+    return {
+      cycleSeconds: Number(config & 0xffffn),
+      skill: Number((config >> 16n) & 0xffn),
+      reqLevel: Number((config >> 24n) & 0xffn),
+      xp: Number((config >> 32n) & 0xffffffffn),
+      cookedItem: (config >> 64n) & 0xffffn,
+    };
+  }
+
+  function decodeGatherConfig(config: bigint) {
+    return {
+      cycleSeconds: Number(config & 0xffffn),
+      skill: Number((config >> 16n) & 0xffn),
+      reqLevel: Number((config >> 24n) & 0xffn),
+      xp: Number((config >> 32n) & 0xffffffffn),
+      rewardItem: (config >> 64n) & 0xffffn,
+      rewardAmount: (config >> 80n) & 0xffffn,
+    };
+  }
+
   it("uses the shared alpha level curve thresholds", async function () {
     const game = await deployIdleIsles();
 
@@ -98,6 +139,45 @@ describe("IdleIsles", async function () {
     const stats = await content.read.itemStatsOf([BARK_LEGGINGS]);
     assert.equal(stats.defence, 1);
     assert.equal(stats.hitpoints, 1);
+  });
+
+  it("exposes packed recipe data for expanded artisan content", async function () {
+    const content = await viem.deployContract("IdleIslesContent");
+
+    const [config, costs, rewards] = await content.read.getArtisanActivity([CRAFT_LEATHER_COWL]);
+    const decodedConfig = decodeRecipeConfig(config);
+
+    assert.deepEqual(decodedConfig, {
+      cycleSeconds: 5,
+      skill: 8,
+      reqLevel: 1,
+      xp: 15,
+      cookedItem: 0n,
+    });
+    assert.deepEqual(decodeRecipePair(costs, 0), { itemId: HIDE, amount: 2n });
+    assert.deepEqual(decodeRecipePair(costs, 1), { itemId: ASH_LOG, amount: 1n });
+    assert.deepEqual(decodeRecipePair(rewards, 0), { itemId: LEATHER_COWL, amount: 1n });
+  });
+
+  it("exposes packed gather data for expanded source content", async function () {
+    const content = await viem.deployContract("IdleIslesContent");
+
+    assert.deepEqual(decodeGatherConfig(await content.read.getGatherActivity([PINE_STAND])), {
+      cycleSeconds: 7,
+      skill: 3,
+      reqLevel: 4,
+      xp: 32,
+      rewardItem: PINE_LOG,
+      rewardAmount: 2n,
+    });
+    assert.deepEqual(decodeGatherConfig(await content.read.getGatherActivity([TUNGSTEN_LODE])), {
+      cycleSeconds: 18,
+      skill: 5,
+      reqLevel: 55,
+      xp: 140,
+      rewardItem: 37n,
+      rewardAmount: 1n,
+    });
   });
 
   it("creates a profile with starter HP and Crowns", async function () {
@@ -200,7 +280,7 @@ describe("IdleIsles", async function () {
 
   it("escrows listed items and transfers them to buyers", async function () {
     const [seller, buyer] = await viem.getWalletClients();
-    const game = await deployIdleIsles();
+    const { game, hoardHall } = await deployIdleIslesWithHoardHall();
 
     await game.write.createProfile();
     await game.write.createProfile({ account: buyer.account });
@@ -208,48 +288,51 @@ describe("IdleIsles", async function () {
     await networkHelpers.time.increase(7);
     await game.write.claim();
 
-    await game.write.createOrder([HIDE, 1n, 10n]);
+    await game.write.setApprovalForAll([hoardHall.address, true]);
+    await hoardHall.write.createOrder([HIDE, 1n, 10n]);
 
-    const order = await game.read.orders([1n]);
+    const order = await hoardHall.read.orders([1n]);
 
     assert.equal(order[0].toLowerCase(), seller.account.address.toLowerCase());
     assert.equal(order[1], HIDE);
     assert.equal(order[2], 10n);
     assert.equal(order[3], 1n);
     assert.equal(await game.read.balanceOf([seller.account.address, HIDE]), 0n);
-    assert.equal(await game.read.balanceOf([game.address, HIDE]), 1n);
+    assert.equal(await game.read.balanceOf([hoardHall.address, HIDE]), 1n);
 
-    await game.write.buy([1n, 1n], { account: buyer.account });
+    await game.write.setApprovalForAll([hoardHall.address, true], { account: buyer.account });
+    await hoardHall.write.buy([1n, 1n], { account: buyer.account });
 
-    const filledOrder = await game.read.orders([1n]);
+    const filledOrder = await hoardHall.read.orders([1n]);
 
     assert.equal(filledOrder[3], 0n);
     assert.equal(await game.read.balanceOf([buyer.account.address, HIDE]), 1n);
     assert.equal(await game.read.balanceOf([buyer.account.address, CROWNS]), 70n);
     assert.equal(await game.read.balanceOf([seller.account.address, CROWNS]), 92n);
-    assert.equal(await game.read.balanceOf([game.address, HIDE]), 0n);
+    assert.equal(await game.read.balanceOf([hoardHall.address, HIDE]), 0n);
   });
 
   it("returns escrowed items when a seller cancels an order", async function () {
     const [seller] = await viem.getWalletClients();
-    const game = await deployIdleIsles();
+    const { game, hoardHall } = await deployIdleIslesWithHoardHall();
 
     await game.write.createProfile();
     await game.write.startCombat([TRAINING_YARD]);
     await networkHelpers.time.increase(7);
     await game.write.claim();
-    await game.write.createOrder([HIDE, 1n, 10n]);
+    await game.write.setApprovalForAll([hoardHall.address, true]);
+    await hoardHall.write.createOrder([HIDE, 1n, 10n]);
 
     assert.equal(await game.read.balanceOf([seller.account.address, HIDE]), 0n);
-    assert.equal(await game.read.balanceOf([game.address, HIDE]), 1n);
+    assert.equal(await game.read.balanceOf([hoardHall.address, HIDE]), 1n);
 
-    await game.write.cancelOrder([1n]);
+    await hoardHall.write.cancelOrder([1n]);
 
-    const cancelledOrder = await game.read.orders([1n]);
+    const cancelledOrder = await hoardHall.read.orders([1n]);
 
     assert.equal(cancelledOrder[3], 0n);
     assert.equal(await game.read.balanceOf([seller.account.address, HIDE]), 1n);
-    assert.equal(await game.read.balanceOf([game.address, HIDE]), 0n);
+    assert.equal(await game.read.balanceOf([hoardHall.address, HIDE]), 0n);
   });
 
   it("gathers Ash Logs and crafts starter gear through gameplay", async function () {
@@ -275,32 +358,99 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.skillXp([player.account.address, 6]), 32n);
   });
 
+  it("gathers expanded source routes through content-driven settlement", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([ASH_GROVE]);
+    await networkHelpers.time.increase(275);
+    await game.write.claim();
+
+    assert.equal(await game.read.levelOf([player.account.address, 3]), 4);
+
+    await game.write.startGather([PINE_STAND]);
+    await networkHelpers.time.increase(14);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, PINE_LOG]), 4n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 2108n);
+  });
+
+  it("crafts Bark Leggings through the expanded Smithing recipe table", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([ASH_GROVE]);
+    await networkHelpers.time.increase(35);
+    await game.write.claim();
+    await game.write.startArtisan([WOOD_ARMORY]);
+    await networkHelpers.time.increase(24);
+    await game.write.claim();
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    assert.equal(await game.read.levelOf([player.account.address, 6]), 2);
+
+    await game.write.startArtisan([BARK_LEGGINGS_CRAFT]);
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, BARK_LEGGINGS]), 1n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
+    assert.equal(await game.read.skillXp([player.account.address, 6]), 168n);
+  });
+
+  it("crafts leather gear through the expanded Crafting recipe table", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([ASH_GROVE]);
+    await networkHelpers.time.increase(5);
+    await game.write.claim();
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(14);
+    await game.write.claim();
+
+    await game.write.startArtisan([CRAFT_LEATHER_COWL]);
+    await networkHelpers.time.increase(5);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, LEATHER_COWL]), 1n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 1n);
+    assert.equal(await game.read.skillXp([player.account.address, 8]), 30n);
+  });
+
   it("settles capped gather backlog without double-paying claimed cycles", async function () {
     const [player] = await viem.getWalletClients();
     const game = await deployIdleIsles();
 
     await game.write.createProfile();
     await game.write.startGather([ASH_GROVE]);
-    await networkHelpers.time.increase(1250);
+    await networkHelpers.time.increase(6250);
 
+    assert.equal(await game.read.pendingCycles([player.account.address]), 1250n);
+
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 2000n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 36000n);
     assert.equal(await game.read.pendingCycles([player.account.address]), 250n);
 
     await game.write.claim();
 
-    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 400n);
-    assert.equal(await game.read.skillXp([player.account.address, 3]), 7200n);
-    assert.equal(await game.read.pendingCycles([player.account.address]), 50n);
-
-    await game.write.claim();
-
-    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 500n);
-    assert.equal(await game.read.skillXp([player.account.address, 3]), 9000n);
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 2500n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 45000n);
     assert.equal(await game.read.pendingCycles([player.account.address]), 0n);
 
     await game.write.claim();
 
-    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 500n);
-    assert.equal(await game.read.skillXp([player.account.address, 3]), 9000n);
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 2500n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 45000n);
   });
 
   it("mines copper and tin and smelts Copper Bars", async function () {
@@ -390,6 +540,30 @@ describe("IdleIsles", async function () {
     assert(cookedMinnow < 100n);
     assert.equal(await game.read.skillXp([player.account.address, 4]), 2000n);
     assert.equal(await game.read.skillXp([player.account.address, 7]), 2800n);
+  });
+
+  it("settles a thousand cooking cycles in one claim", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([RIVER_BEND]);
+    await networkHelpers.time.increase(3000);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, RAW_MINNOW]), 1000n);
+
+    await game.write.startArtisan([COOK_MINNOW]);
+    await networkHelpers.time.increase(4000);
+    await game.write.claim();
+
+    const cookedMinnow = await game.read.balanceOf([player.account.address, COOKED_MINNOW]);
+
+    assert.equal(await game.read.balanceOf([player.account.address, RAW_MINNOW]), 0n);
+    assert(cookedMinnow > 0n);
+    assert(cookedMinnow < 1000n);
+    assert.equal(await game.read.skillXp([player.account.address, 4]), 20000n);
+    assert.equal(await game.read.skillXp([player.account.address, 7]), 28000n);
   });
 
   it("heals with Cooked Minnow made through gameplay", async function () {

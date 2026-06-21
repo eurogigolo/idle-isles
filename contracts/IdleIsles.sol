@@ -2,11 +2,10 @@
 pragma solidity ^0.8.24;
 
 import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IIdleIslesContent} from "./IIdleIslesContent.sol";
 
-contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
+contract IdleIsles is ERC1155, ReentrancyGuard {
     error ProfileExists();
     error NoProfile();
     error NoHp();
@@ -25,20 +24,11 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     error NoFood();
     error NotEquipment();
     error NoItem();
-    error AmountZero();
-    error PriceZero();
-    error CrownsNotListed();
-    error NotEnoughListed();
-    error NotSeller();
-    error OrderEmpty();
 
     uint256 internal constant CROWNS = 1;
-    uint256 internal constant ASH_LOG = 2;
     uint256 internal constant PINE_LOG = 3;
     uint256 internal constant RAW_MINNOW = 8;
     uint256 internal constant COOKED_MINNOW = 9;
-    uint256 internal constant COPPER_ORE = 30;
-    uint256 internal constant TIN_ORE = 31;
     uint256 internal constant COPPER_BAR = 40;
     uint256 internal constant WOOD_CLUB = 50;
     uint256 internal constant BARK_SHIELD = 51;
@@ -65,13 +55,12 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     uint16 internal constant ACTIVITY_DIRE_WOLF = 110;
     uint16 internal constant ACTIVITY_VENOMOUS_DRAKE = 111;
     uint16 internal constant ACTIVITY_ASH_GROVE = 201;
-    uint16 internal constant ACTIVITY_COPPER_RIDGE = 202;
-    uint16 internal constant ACTIVITY_TIN_HOLLOW = 203;
-    uint16 internal constant ACTIVITY_RIVER_BEND = 204;
+    uint16 internal constant ACTIVITY_LAST_GATHER = 217;
     uint16 internal constant ACTIVITY_WOOD_ARMORY = 301;
     uint16 internal constant ACTIVITY_COPPER_SMELTER = 302;
     uint16 internal constant ACTIVITY_COPPER_DAGGER = 303;
     uint16 internal constant ACTIVITY_COOK_MINNOW = 304;
+    uint16 internal constant ACTIVITY_LAST_ARTISAN = 339;
 
     uint8 internal constant AREA_STARTER = 1;
     uint8 internal constant AREA_OUTER_ISLES = 2;
@@ -81,7 +70,8 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     uint256 internal constant OUTER_ISLES_PASSAGE_COST = 50_000;
 
     uint256 internal constant AFK_CAP = 8 hours;
-    uint16 internal constant MAX_SETTLE_CYCLES = 200;
+    uint16 internal constant MAX_SETTLE_CYCLES = 1_000;
+    uint16 internal constant MAX_COMBAT_SETTLE_CYCLES = 200;
 
     enum Skill {
         Attack,
@@ -130,13 +120,6 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         uint256 foodItemId;
     }
 
-    struct Order {
-        address seller;
-        uint256 itemId;
-        uint128 priceEach;
-        uint64 amountRemaining;
-    }
-
     mapping(address => bool) public hasProfile;
     mapping(address => uint16) public currentHitpoints;
     mapping(address => uint8) public currentAreaId;
@@ -144,11 +127,9 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     mapping(address => ActiveTask) public activeTask;
     mapping(address => Equipment) private equipment;
     mapping(address => AutoSettleConfig) public autoSettleConfig;
-    mapping(uint256 => Order) public orders;
     mapping(address => uint8) private unlockedAreaMask;
 
     IIdleIslesContent internal immutable CONTENT;
-    uint256 public nextOrderId = 1;
 
     event ProfileCreated(address indexed player, uint256 maxHitpoints);
     event ActivityStarted(address indexed player, uint16 indexed activityId);
@@ -177,15 +158,6 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     event ItemUnequipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
     event AreaTraveled(address indexed player, uint8 indexed areaId, uint256 cost);
     event AutoSettleConfigured(address indexed player, address indexed operator, uint64 expiresAt);
-    event OrderCreated(
-        uint256 indexed orderId,
-        address indexed seller,
-        uint256 indexed itemId,
-        uint256 amount,
-        uint256 priceEach
-    );
-    event OrderFilled(uint256 indexed orderId, address indexed buyer, uint256 amount);
-    event OrderCancelled(uint256 indexed orderId);
     event SkillActivitySettled(
         address indexed player,
         uint16 indexed activityId,
@@ -207,7 +179,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function supportsInterface(bytes4 interfaceId)
         public
         view
-        override(ERC1155, ERC1155Holder)
+        override(ERC1155)
         returns (bool)
     {
         return super.supportsInterface(interfaceId);
@@ -246,19 +218,12 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function startGather(uint16 activityId) external nonReentrant {
         if (!hasProfile[msg.sender]) revert NoProfile();
         _settle(msg.sender, MAX_SETTLE_CYCLES);
-        if (
-            activityId != ACTIVITY_ASH_GROVE &&
-            activityId != ACTIVITY_COPPER_RIDGE &&
-            activityId != ACTIVITY_TIN_HOLLOW &&
-            activityId != ACTIVITY_RIVER_BEND
-        ) revert BadActivity();
+
+        uint256 config = CONTENT.getGatherActivity(activityId);
         _requireActivityArea(msg.sender, activityId);
-        if (activityId == ACTIVITY_ASH_GROVE) {
-            if (levelOf(msg.sender, Skill.Woodcutting) < 1) revert RequirementLow();
-        } else if (activityId == ACTIVITY_RIVER_BEND) {
-            if (levelOf(msg.sender, Skill.Fishing) < 1) revert RequirementLow();
-        } else {
-            if (levelOf(msg.sender, Skill.Mining) < 1) revert RequirementLow();
+
+        if (levelOf(msg.sender, Skill(uint8(config >> 16))) < uint8(config >> 24)) {
+            revert RequirementLow();
         }
 
         _startTask(msg.sender, activityId);
@@ -267,37 +232,14 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function startArtisan(uint16 activityId) external nonReentrant {
         if (!hasProfile[msg.sender]) revert NoProfile();
         _settle(msg.sender, MAX_SETTLE_CYCLES);
-        if (
-            activityId != ACTIVITY_WOOD_ARMORY &&
-            activityId != ACTIVITY_COPPER_SMELTER &&
-            activityId != ACTIVITY_COPPER_DAGGER &&
-            activityId != ACTIVITY_COOK_MINNOW
-        ) revert BadActivity();
+
+        (uint256 config, uint256 costs,) = CONTENT.getArtisanActivity(activityId);
         _requireActivityArea(msg.sender, activityId);
 
-        if (activityId == ACTIVITY_COOK_MINNOW) {
-            if (levelOf(msg.sender, Skill.Cooking) < 1) revert RequirementLow();
-            if (balanceOf(msg.sender, RAW_MINNOW) == 0) revert MaterialLow();
-            _startTask(msg.sender, activityId);
-            return;
+        if (levelOf(msg.sender, Skill(uint8(config >> 16))) < uint8(config >> 24)) {
+            revert RequirementLow();
         }
-
-        uint8 smithingLevel = levelOf(msg.sender, Skill.Smithing);
-        if (smithingLevel < 1) revert RequirementLow();
-        if (activityId == ACTIVITY_WOOD_ARMORY) {
-            if (balanceOf(msg.sender, ASH_LOG) < 3) revert MaterialLow();
-        } else if (activityId == ACTIVITY_COPPER_SMELTER) {
-            if (
-                balanceOf(msg.sender, COPPER_ORE) < 1 ||
-                balanceOf(msg.sender, TIN_ORE) < 1 ||
-                balanceOf(msg.sender, ASH_LOG) < 1
-            ) revert MaterialLow();
-        } else {
-            if (smithingLevel < 4) revert RequirementLow();
-            if (balanceOf(msg.sender, COPPER_BAR) < 3 || balanceOf(msg.sender, ASH_LOG) < 2) {
-                revert MaterialLow();
-            }
-        }
+        if (_affordableRecipeCycles(msg.sender, costs) == 0) revert MaterialLow();
 
         _startTask(msg.sender, activityId);
     }
@@ -416,54 +358,6 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         _settle(msg.sender, MAX_SETTLE_CYCLES);
         _unequipSlot(msg.sender, slot);
         _clampHitpoints(msg.sender);
-    }
-
-    function createOrder(uint256 itemId, uint64 amount, uint128 priceEach) external nonReentrant {
-        if (!hasProfile[msg.sender]) revert NoProfile();
-        _settle(msg.sender, MAX_SETTLE_CYCLES);
-        if (amount == 0) revert AmountZero();
-        if (priceEach == 0) revert PriceZero();
-        if (itemId == CROWNS) revert CrownsNotListed();
-
-        _safeTransferFrom(msg.sender, address(this), itemId, amount, "");
-
-        uint256 orderId = nextOrderId++;
-        orders[orderId] = Order({
-            seller: msg.sender,
-            itemId: itemId,
-            priceEach: priceEach,
-            amountRemaining: amount
-        });
-
-        emit OrderCreated(orderId, msg.sender, itemId, amount, priceEach);
-    }
-
-    function buy(uint256 orderId, uint64 amount) external nonReentrant {
-        if (!hasProfile[msg.sender]) revert NoProfile();
-        _settle(msg.sender, MAX_SETTLE_CYCLES);
-
-        Order storage order = orders[orderId];
-        if (amount == 0) revert AmountZero();
-        if (order.amountRemaining < amount) revert NotEnoughListed();
-
-        uint256 totalPrice = uint256(order.priceEach) * amount;
-        _safeTransferFrom(msg.sender, order.seller, CROWNS, totalPrice, "");
-        _safeTransferFrom(address(this), msg.sender, order.itemId, amount, "");
-
-        order.amountRemaining -= amount;
-        emit OrderFilled(orderId, msg.sender, amount);
-    }
-
-    function cancelOrder(uint256 orderId) external nonReentrant {
-        Order storage order = orders[orderId];
-        if (order.seller != msg.sender) revert NotSeller();
-        if (order.amountRemaining == 0) revert OrderEmpty();
-
-        uint64 remaining = order.amountRemaining;
-        order.amountRemaining = 0;
-        _safeTransferFrom(address(this), msg.sender, order.itemId, remaining, "");
-
-        emit OrderCancelled(orderId);
     }
 
     function pendingCycles(address player) external view returns (uint256 cycles) {
@@ -593,33 +487,20 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
             return;
         }
 
-        if (cycleLimit == 0 || cycleLimit > MAX_SETTLE_CYCLES) {
-            cycleLimit = MAX_SETTLE_CYCLES;
+        uint16 maxSettleCycles = _maxSettleCycles(activityId);
+        if (cycleLimit == 0 || cycleLimit > maxSettleCycles) {
+            cycleLimit = maxSettleCycles;
         }
         if (possibleCycles > cycleLimit) {
             possibleCycles = cycleLimit;
         }
 
-        if (
-            activityId == ACTIVITY_ASH_GROVE ||
-            activityId == ACTIVITY_COPPER_RIDGE ||
-            activityId == ACTIVITY_TIN_HOLLOW ||
-            activityId == ACTIVITY_RIVER_BEND
-        ) {
-            _settleGather(player, possibleCycles, cycleSeconds);
+        if (_isGatherActivity(activityId)) {
+            _settleGather(player, possibleCycles, cycleSeconds, activityId);
             return;
         }
 
-        if (activityId == ACTIVITY_COOK_MINNOW) {
-            _settleCooking(player, possibleCycles, cycleSeconds);
-            return;
-        }
-
-        if (
-            activityId == ACTIVITY_WOOD_ARMORY ||
-            activityId == ACTIVITY_COPPER_SMELTER ||
-            activityId == ACTIVITY_COPPER_DAGGER
-        ) {
+        if (_isArtisanActivity(activityId)) {
             _settleArtisan(player, possibleCycles, cycleSeconds, activityId);
             return;
         }
@@ -658,6 +539,13 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         }
     }
 
+    function _maxSettleCycles(uint16 activityId) internal pure returns (uint16) {
+        if (_isCombatActivity(activityId)) {
+            return MAX_COMBAT_SETTLE_CYCLES;
+        }
+        return MAX_SETTLE_CYCLES;
+    }
+
     function _startTask(address player, uint16 activityId) internal {
         activeTask[player] = ActiveTask({
             activityId: activityId,
@@ -677,32 +565,13 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
             return adjustedCycleSeconds(player, CONTENT.getCombatActivity(activityId));
         }
 
-        if (activityId == ACTIVITY_ASH_GROVE) {
-            return 5;
+        if (_isGatherActivity(activityId)) {
+            return uint32(CONTENT.getGatherActivity(activityId) & 0xffff);
         }
 
-        if (activityId == ACTIVITY_COPPER_RIDGE || activityId == ACTIVITY_TIN_HOLLOW) {
-            return 7;
-        }
-
-        if (activityId == ACTIVITY_RIVER_BEND) {
-            return 6;
-        }
-
-        if (activityId == ACTIVITY_WOOD_ARMORY) {
-            return 6;
-        }
-
-        if (activityId == ACTIVITY_COPPER_SMELTER) {
-            return 8;
-        }
-
-        if (activityId == ACTIVITY_COPPER_DAGGER) {
-            return 10;
-        }
-
-        if (activityId == ACTIVITY_COOK_MINNOW) {
-            return 4;
+        if (_isArtisanActivity(activityId)) {
+            (uint256 config,,) = CONTENT.getArtisanActivity(activityId);
+            return uint32(config & 0xffff);
         }
 
         revert BadActivity();
@@ -710,6 +579,14 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
     function _isCombatActivity(uint16 activityId) internal pure returns (bool) {
         return activityId >= ACTIVITY_TRAINING_YARD && activityId <= ACTIVITY_VENOMOUS_DRAKE;
+    }
+
+    function _isGatherActivity(uint16 activityId) internal pure returns (bool) {
+        return activityId >= ACTIVITY_ASH_GROVE && activityId <= ACTIVITY_LAST_GATHER;
+    }
+
+    function _isArtisanActivity(uint16 activityId) internal pure returns (bool) {
+        return activityId >= ACTIVITY_WOOD_ARMORY && activityId <= ACTIVITY_LAST_ARTISAN;
     }
 
     function _requireActivityArea(address player, uint16 activityId) internal view {
@@ -721,7 +598,12 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function _activityAreaId(uint16 activityId) internal pure returns (uint8) {
         if (
             (activityId >= ACTIVITY_CAVE_BAT && activityId <= ACTIVITY_HOLLOW_TREANT) ||
-            (activityId >= ACTIVITY_DIRE_WOLF && activityId <= ACTIVITY_VENOMOUS_DRAKE)
+            (activityId >= ACTIVITY_DIRE_WOLF && activityId <= ACTIVITY_VENOMOUS_DRAKE) ||
+            (activityId >= 207 && activityId <= 209) ||
+            (activityId >= 211 && activityId <= 214) ||
+            (activityId >= 216 && activityId <= ACTIVITY_LAST_GATHER) ||
+            (activityId >= 316 && activityId <= 319) ||
+            (activityId >= 329 && activityId <= 334)
         ) {
             return AREA_OUTER_ISLES;
         }
@@ -760,68 +642,15 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function _settleGather(
         address player,
         uint256 cycles,
-        uint32 cycleSeconds
+        uint32 cycleSeconds,
+        uint16 activityId
     ) internal {
-        uint16 activityId = activeTask[player].activityId;
-        if (activityId == ACTIVITY_ASH_GROVE) {
-            _grantSkillXp(player, Skill.Woodcutting, 18 * cycles);
-            _mint(player, ASH_LOG, 2 * cycles, "");
-        } else if (activityId == ACTIVITY_RIVER_BEND) {
-            _grantSkillXp(player, Skill.Fishing, 20 * cycles);
-            _mint(player, RAW_MINNOW, 2 * cycles, "");
-        } else {
-            _grantSkillXp(player, Skill.Mining, 20 * cycles);
-            _mint(player, activityId == ACTIVITY_COPPER_RIDGE ? COPPER_ORE : TIN_ORE, 2 * cycles, "");
-        }
+        uint256 config = CONTENT.getGatherActivity(activityId);
+        _grantSkillXp(player, Skill(uint8(config >> 16)), uint32(config >> 32) * cycles);
+        _mint(player, uint16(config >> 64), uint16(config >> 80) * cycles, "");
         activeTask[player].lastResolvedAt += uint64(cycles * cycleSeconds);
 
         emit SkillActivitySettled(player, activityId, cycles);
-    }
-
-    function _settleCooking(
-        address player,
-        uint256 possibleCycles,
-        uint32 cycleSeconds
-    ) internal {
-        uint256 cycles = possibleCycles;
-        uint256 rawAvailable = balanceOf(player, RAW_MINNOW);
-        if (cycles > rawAvailable) {
-            cycles = rawAvailable;
-        }
-        if (cycles == 0) {
-            return;
-        }
-
-        uint256 cooked;
-        uint256 cycleOffset =
-            (activeTask[player].lastResolvedAt - activeTask[player].startedAt) /
-            cycleSeconds;
-        uint256 burnChanceBps = _cookMinnowBurnChanceBps(player);
-
-        for (uint256 i = 0; i < cycles; i++) {
-            if (_rollBps(player, cycleOffset + i, 53) >= burnChanceBps) {
-                cooked++;
-            }
-        }
-
-        _burn(player, RAW_MINNOW, cycles);
-        if (cooked > 0) {
-            _mint(player, COOKED_MINNOW, cooked, "");
-        }
-        _grantSkillXp(player, Skill.Cooking, 14 * cycles);
-        activeTask[player].lastResolvedAt += uint64(cycles * cycleSeconds);
-
-        emit SkillActivitySettled(player, ACTIVITY_COOK_MINNOW, cycles);
-        emit CookingSettled(player, ACTIVITY_COOK_MINNOW, cycles, cooked, cycles - cooked);
-    }
-
-    function _cookMinnowBurnChanceBps(address player) internal view returns (uint256) {
-        uint8 cookingLevel = levelOf(player, Skill.Cooking);
-        uint256 reduction = uint256(cookingLevel - 1) * 300;
-        if (reduction >= 3500) {
-            return 0;
-        }
-        return 3500 - reduction;
     }
 
     function _settleArtisan(
@@ -830,21 +659,8 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         uint32 cycleSeconds,
         uint16 activityId
     ) internal {
-        uint256 affordableCycles;
-        if (activityId == ACTIVITY_WOOD_ARMORY) {
-            affordableCycles = balanceOf(player, ASH_LOG) / 3;
-        } else if (activityId == ACTIVITY_COPPER_SMELTER) {
-            affordableCycles = balanceOf(player, COPPER_ORE);
-            uint256 tinCycles = balanceOf(player, TIN_ORE);
-            uint256 ashCycles = balanceOf(player, ASH_LOG);
-            if (affordableCycles > tinCycles) affordableCycles = tinCycles;
-            if (affordableCycles > ashCycles) affordableCycles = ashCycles;
-        } else {
-            affordableCycles = balanceOf(player, COPPER_BAR) / 3;
-            uint256 ashCycles = balanceOf(player, ASH_LOG) / 2;
-            if (affordableCycles > ashCycles) affordableCycles = ashCycles;
-        }
-
+        (uint256 config, uint256 costs, uint256 rewards) = CONTENT.getArtisanActivity(activityId);
+        uint256 affordableCycles = _affordableRecipeCycles(player, costs);
         uint256 cycles = possibleCycles;
         if (cycles > affordableCycles) {
             cycles = affordableCycles;
@@ -853,27 +669,109 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
             return;
         }
 
-        if (activityId == ACTIVITY_WOOD_ARMORY) {
-            _burn(player, ASH_LOG, 3 * cycles);
-            _mint(player, WOOD_CLUB, cycles, "");
-            _mint(player, BARK_SHIELD, cycles, "");
-            _mint(player, BARK_VEST, cycles, "");
-            _grantSkillXp(player, Skill.Smithing, 16 * cycles);
-        } else if (activityId == ACTIVITY_COPPER_SMELTER) {
-            _burn(player, COPPER_ORE, cycles);
-            _burn(player, TIN_ORE, cycles);
-            _burn(player, ASH_LOG, cycles);
-            _mint(player, COPPER_BAR, cycles, "");
-            _grantSkillXp(player, Skill.Smithing, 26 * cycles);
-        } else {
-            _burn(player, COPPER_BAR, 3 * cycles);
-            _burn(player, ASH_LOG, 2 * cycles);
-            _mint(player, COPPER_DAGGER, cycles, "");
-            _grantSkillXp(player, Skill.Smithing, 42 * cycles);
+        _burnRecipeCosts(player, costs, cycles);
+
+        uint256 cookedItem = uint16(config >> 64);
+        if (cookedItem != 0) {
+            uint256 cooked = _cookedRecipeCycles(player, config, cycles, cycleSeconds);
+            if (cooked > 0) {
+                _mint(player, cookedItem, cooked, "");
+            }
+            _grantSkillXp(player, Skill(uint8(config >> 16)), uint32(config >> 32) * cycles);
+            activeTask[player].lastResolvedAt += uint64(cycles * cycleSeconds);
+            emit SkillActivitySettled(player, activityId, cycles);
+            emit CookingSettled(player, activityId, cycles, cooked, cycles - cooked);
+            return;
         }
+
+        _mintRecipeRewards(player, rewards, cycles);
+        _grantSkillXp(player, Skill(uint8(config >> 16)), uint32(config >> 32) * cycles);
         activeTask[player].lastResolvedAt += uint64(cycles * cycleSeconds);
 
         emit SkillActivitySettled(player, activityId, cycles);
+    }
+
+    function _affordableRecipeCycles(
+        address player,
+        uint256 costs
+    ) internal view returns (uint256 cycles) {
+        cycles = type(uint256).max;
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 pair = (costs >> (i * 32)) & 0xffffffff;
+            uint256 itemId = uint16(pair);
+            uint256 amount = uint16(pair >> 16);
+            if (itemId == 0 || amount == 0) continue;
+
+            uint256 itemCycles = balanceOf(player, itemId) / amount;
+            if (itemCycles < cycles) {
+                cycles = itemCycles;
+            }
+        }
+        if (cycles == type(uint256).max) return 0;
+    }
+
+    function _burnRecipeCosts(
+        address player,
+        uint256 costs,
+        uint256 cycles
+    ) internal {
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 pair = (costs >> (i * 32)) & 0xffffffff;
+            uint256 itemId = uint16(pair);
+            uint256 amount = uint16(pair >> 16);
+            if (itemId != 0 && amount != 0) {
+                _burn(player, itemId, amount * cycles);
+            }
+        }
+    }
+
+    function _mintRecipeRewards(
+        address player,
+        uint256 rewards,
+        uint256 cycles
+    ) internal {
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 pair = (rewards >> (i * 32)) & 0xffffffff;
+            uint256 itemId = uint16(pair);
+            uint256 amount = uint16(pair >> 16);
+            if (itemId != 0 && amount != 0) {
+                _mint(player, itemId, amount * cycles, "");
+            }
+        }
+    }
+
+    function _cookedRecipeCycles(
+        address player,
+        uint256 config,
+        uint256 cycles,
+        uint32 cycleSeconds
+    ) internal view returns (uint256 cooked) {
+        uint256 cycleOffset =
+            (activeTask[player].lastResolvedAt - activeTask[player].startedAt) /
+            cycleSeconds;
+        uint256 burnChanceBps = _recipeBurnChanceBps(player, config);
+
+        for (uint256 i = 0; i < cycles; i++) {
+            if (_rollBps(player, cycleOffset + i, 53) >= burnChanceBps) {
+                cooked++;
+            }
+        }
+    }
+
+    function _recipeBurnChanceBps(
+        address player,
+        uint256 config
+    ) internal view returns (uint256) {
+        uint256 base = uint16(config >> 80);
+        uint256 floor = uint16(config >> 96);
+        if (base <= floor) return floor;
+
+        uint256 reduction =
+            uint256(levelOf(player, Skill.Cooking) - 1) *
+            uint16(config >> 112);
+        uint256 reducible = base - floor;
+        if (reduction >= reducible) return floor;
+        return base - reduction;
     }
 
     function _resolveCombatCycle(

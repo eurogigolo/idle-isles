@@ -12,12 +12,13 @@ Primary files:
 - `src/chain.ts`: MegaETH Testnet contract configuration, minimal `IdleIsles` ABI, profile snapshot reads, and core write helpers.
 - `src/game.ts`: authoritative local simulation data and pure gameplay functions.
 - `src/App.css`: visual layout, responsive UI, and CSS-rendered activity scenes.
-- `contracts/IdleIsles.sol`: current Solidity alpha foundation for profile creation, combat settlement, equipment, food, marketplace orders, death penalty, and session settlement.
+- `contracts/IdleIsles.sol`: current Solidity alpha foundation for profile creation, combat settlement, equipment, food, death penalty, and session settlement.
 - `contracts/IdleIslesContent.sol`: immutable static content contract for item slots, item stats, food healing, combat activity definitions, and combat drop tables.
+- `contracts/HoardHall.sol`: extracted ERC-1155 marketplace escrow/order contract for player listings.
 - `contracts/IIdleIslesContent.sol`: interface shared by the core contract and the deployed content contract.
 - `content/core/ids.json`: checked core namespace and numeric ID registry for areas, items, and activities. It generates frontend chain mappings and remains migration scaffolding before full content generation becomes the source of truth.
 - `hardhat.config.ts`: Hardhat 3 configuration for contract builds/tests using the viem, network helper, and Node test-runner plugins, Solidity 0.8.28, and 1 optimizer run on both default and production profiles. The contract pragma remains `^0.8.24`, but OpenZeppelin 5.6.1 requires a compiler new enough for the `mcopy` builtin. Optimized default builds are required because bytecode size is a hard constraint for the stateful core contract. The optimizer is biased toward smaller deployed bytecode because gameplay content is currently the limiting factor.
-- `scripts/deploy.ts`: Hardhat 3 + viem deployment script for the `IdleIslesContent` and `IdleIsles` contract pair. It writes deployment addresses to `deployments/<network>.json`.
+- `scripts/deploy.ts`: Hardhat 3 + viem deployment script for `IdleIslesContent`, `IdleIsles`, and `HoardHall`. It writes deployment addresses to `deployments/<network>.json`.
 - `scripts/check-bytecode-size.mjs`: deployed bytecode budget gate. `IdleIsles` currently has a 24,200-byte project budget below the 24,576-byte EIP-170 hard limit.
 - `scripts/check-content-ids.mjs`: validates the core ID registry for namespace format, uniqueness, and basic references.
 - `scripts/generate-content-ids.mjs`: generates `src/generated/contentIds.ts` from the checked core ID registry.
@@ -37,6 +38,7 @@ Current stack:
 - OpenZeppelin ERC-1155, ERC1155Holder, ReentrancyGuard
 - Hardhat 3 with `@nomicfoundation/hardhat-toolbox-viem` for contract tests
 - Node.js built-in test runner through the Hardhat toolbox
+- `@megaeth-labs/wallet-sdk` for optional MOSS wallet/session-key gameplay calls
 - `dotenv` for local `.env` deployment configuration
 
 Tooling boundaries:
@@ -44,7 +46,7 @@ Tooling boundaries:
 - ESLint ignores generated output directories: `dist`, `artifacts`, and `cache`.
 - Hardhat writes ABI/build artifacts into `artifacts` and compile metadata into `cache`; those files are generated and are not linted as source.
 
-The app is still primarily a local simulation. A small opt-in Chain mode can connect to a configured deployed `IdleIsles` contract and route core profile, activity, claim, equipment, food, and marketplace actions through wallet transactions.
+The app is still primarily a local simulation. A small opt-in Chain mode can connect to configured deployed `IdleIsles` and `HoardHall` contracts and route core profile, activity, claim, equipment, food, and marketplace actions through wallet transactions. Chain mode supports injected wallets and optional MOSS wallet sessions for scoped gameplay calls.
 
 ## 2. Product Direction
 
@@ -742,11 +744,11 @@ Market row detail:
 
 Chain marketplace flow:
 
-- Chain mode reads recent order IDs from `nextOrderId` and the public `orders` mapping, capped to the latest 120 orders until an event indexer exists.
+- Chain mode reads recent order IDs from `HoardHall.nextOrderId` and the public `HoardHall.orders` mapping, capped to the latest 120 orders until an event indexer exists.
 - Open orders owned by the connected wallet are shown as `Player`; other open onchain orders are shown as `Trader`.
-- Listing calls `createOrder` and escrows ERC-1155 inventory in the contract.
-- Buying calls `buy(orderId, 1)` for one-unit fills.
-- Cancelling calls `cancelOrder` for the connected wallet's own listings.
+- Listing first ensures `HoardHall` is approved as an ERC-1155 operator, then calls `HoardHall.createOrder` and escrows ERC-1155 inventory in the market contract.
+- Buying first ensures `HoardHall` is approved as an ERC-1155 operator, then calls `HoardHall.buy(orderId, 1)` for one-unit fills so Crowns can transfer from buyer to seller.
+- Cancelling calls `HoardHall.cancelOrder` for the connected wallet's own listings.
 - Chain listing availability uses wallet ERC-1155 balances directly because equipped items are already burned/removed from the wallet balance onchain.
 
 ## 17. UI Structure
@@ -792,12 +794,13 @@ Visual implementation:
 
 ## 18. Wallet and Network UX
 
-Wallet support is currently UI-level only.
+Wallet support has two modes: injected wallet transactions and MOSS gameplay sessions.
 
 Functions:
 
-- `connectWallet`: requests `eth_requestAccounts`, then reads `eth_chainId`.
-- `addMegaEth`: sends `wallet_addEthereumChain` for MegaETH Testnet.
+- `connectWallet`: connects either the selected injected wallet or the selected MOSS wallet.
+- `addMegaEth`: sends `wallet_addEthereumChain` for MegaETH Testnet when using an injected wallet; MOSS is already initialized against MegaETH Testnet.
+- `grantMossGameplaySession`: asks MOSS for a 24-hour permission scoped to the configured `IdleIsles` address and the core gameplay function signatures.
 
 MegaETH Testnet config:
 
@@ -807,17 +810,20 @@ MegaETH Testnet config:
 - rpcUrl: `https://carrot.megaeth.com/rpc`
 - explorer: `https://megaeth-testnet-v2.blockscout.com`
 
-Local simulation remains the default. When `VITE_IDLE_ISLES_ADDRESS` is configured and the Chain toggle is selected, the frontend reads wallet profile state from the deployed contract and can submit `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, `createOrder`, `buy`, and `cancelOrder`.
+Local simulation remains the default. When `VITE_IDLE_ISLES_ADDRESS` and `VITE_HOARD_HALL_ADDRESS` are configured and the Chain toggle is selected, the frontend reads wallet profile state from the deployed contracts and can submit `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, Hoard Hall approvals, `createOrder`, `buy`, and `cancelOrder`.
+
+MOSS silent calls are limited to core gameplay methods on `IdleIsles`: profile creation, activity starts, claims, eating, equipment changes, and combat safety configuration. Ship travel and Hoard Hall actions intentionally remain explicit confirmations because they can spend Crowns, approve escrow, list items, buy items, or cancel marketplace orders.
 
 ## 19. Contract Foundation
 
-`contracts/IdleIsles.sol` is an ERC-1155-based alpha foundation. Static lookup content is being separated from the stateful core so content expansion does not keep growing the main contract bytecode.
+`contracts/IdleIsles.sol` is an ERC-1155-based alpha foundation. Static lookup content and Hoard Hall marketplace state are separated from the stateful core so content and market expansion do not keep growing the main contract bytecode.
 
 `contracts/IdleIslesContent.sol` is immutable and ownerless. It contains pure lookups only:
 
 - Equipment slot mapping.
 - Equipment stat mapping.
 - Food healing values.
+- Packed Artisan recipe definitions.
 - Combat activity definitions.
 - Combat drop tables.
 
@@ -825,8 +831,10 @@ Core/content deployment shape:
 
 - Deploy `IdleIslesContent` first.
 - Deploy `IdleIsles` with the metadata URI and the content contract address.
+- Deploy `HoardHall` with the deployed `IdleIsles` address.
 - The content address is stored immutably in the core contract constructor.
-- This is not an admin upgrade hook; changing content requires deploying a new core/content pair for a new testnet build.
+- `HoardHall` stores order state independently and transfers `IdleIsles` ERC-1155 balances through standard approvals.
+- This is not an admin upgrade hook; changing content still requires deploying a new core/content pair for a new testnet build.
 
 Implemented contract areas:
 
@@ -838,15 +846,13 @@ Implemented contract areas:
 - Current HP storage.
 - Combat activity settlement.
 - Starter gather settlement for Ash Grove.
-- Starter artisan settlement for Wood Armory.
+- Generic packed Artisan settlement for registered recipes 301-339.
 - Hitpoints and death penalty.
 - Slot-based equipment.
 - Equip/unequip with burn/remint escrow behavior.
 - Cooked food healing for currently configured food.
-- Marketplace create/buy/cancel.
 - Auto-settle session preferences.
 - Authorized `settleFor` operator flow.
-- ERC-1155 receiving through ERC1155Holder.
 - No production admin role is currently inherited. `Ownable` was removed because there are no owner-only contract functions and the bytecode budget is tight.
 - Runtime guard failures use Solidity custom errors instead of revert strings to reduce deployed bytecode size while preserving explicit failure categories.
 - Contract item and activity IDs are internal constants rather than public constants. The frontend and tests use the documented numeric IDs directly; this avoids generating public getter bytecode for every content constant.
@@ -860,14 +866,13 @@ Contract state includes:
 - `activeTask`
 - `equipment`
 - `autoSettleConfig`
-- `orders`
 - immutable content contract reference
 
 Contract custom errors:
 
 - Profile/session errors such as `ProfileExists`, `NoProfile`, and `NoHp`.
 - Requirement and activity errors such as `RequirementLow`, `EquipmentRequired`, `BadActivity`, and `MaterialLow`.
-- Automation, food, equipment, and marketplace errors such as `AutoDisabled`, `NotFood`, `NotEquipment`, `AmountZero`, and `NotEnoughListed`.
+- Automation, food, and equipment errors such as `AutoDisabled`, `NotFood`, and `NotEquipment`.
 
 Important structs:
 
@@ -877,6 +882,14 @@ Important structs:
 - `CombatActivity`
 - `Drop`
 - `AutoSettleConfig`
+
+Hoard Hall state includes:
+
+- `orders`
+- `nextOrderId`
+
+Hoard Hall structs:
+
 - `Order`
 
 Contract skills enum, zero-based:
@@ -918,43 +931,36 @@ Contract combat start:
 - Writes `ActiveTask`.
 - Emits `ActivityStarted`.
 
-Contract starter gather:
+Contract Gather:
 
-- `startGather(ACTIVITY_ASH_GROVE)` settles the previous task, checks the profile and Woodcutting level, and starts the Ash Grove task.
-- Ash Grove uses 5 second cycles.
-- Each settled cycle grants 18 Woodcutting XP and 2 Ash Logs.
-- `startGather(ACTIVITY_COPPER_RIDGE)` and `startGather(ACTIVITY_TIN_HOLLOW)` settle the previous task, check the profile and Mining level, and start the matching mining task.
-- Copper Ridge and Tin Hollow use 7 second cycles.
-- Each settled mining cycle grants 20 Mining XP and 2 Copper Ore or 2 Tin Ore.
-- `startGather(ACTIVITY_RIVER_BEND)` settles the previous task, checks the profile and Fishing level, and starts the River Bend task.
-- River Bend uses 6 second cycles.
-- Each settled fishing cycle grants 20 Fishing XP and 2 Raw Minnow.
+- `startGather(activityId)` settles the previous task, reads packed Gather data from `IdleIslesContent`, checks the profile, area, and primary skill level, then starts the task.
+- Registered Gather IDs are contiguous from `201` through `217`, covering current local Woodcutting, Fishing, and Mining source routes.
+- Gather config packs cycle seconds, skill, required level, base XP, reward item, and reward amount into one 32-byte entry.
+- Settlement grants packed XP and mints the packed source output per completed cycle.
+- Copper Ridge and Tin Hollow preserve the existing 7 second onchain cycle timing. New source routes use integer-second contract timings derived from the local cycle times.
 
-Contract starter artisan:
+Contract Artisan:
 
-- `startArtisan(ACTIVITY_WOOD_ARMORY)` settles the previous task, checks the profile and Smithing level, requires at least 3 Ash Logs, and starts the Wood Armory task.
-- Wood Armory uses 6 second cycles.
-- Each settled cycle burns 3 Ash Logs, grants 16 Smithing XP, and mints Wood Club, Bark Shield, and Bark Vest.
-- `startArtisan(ACTIVITY_COPPER_SMELTER)` requires Copper Ore, Tin Ore, and Ash Log, uses 8 second cycles, burns one of each material per cycle, grants 26 Smithing XP, and mints Copper Bar.
-- `startArtisan(ACTIVITY_COPPER_DAGGER)` requires Smithing level 4, 3 Copper Bars, and 2 Ash Logs, uses 10 second cycles, grants 42 Smithing XP, and mints Copper Dagger.
-- `startArtisan(ACTIVITY_COOK_MINNOW)` requires Cooking level 1 and at least one Raw Minnow.
-- Cook Minnow uses 4 second cycles, burns one Raw Minnow per attempt, grants 14 Cooking XP per attempt, and mints Cooked Minnow only for successful attempts.
-- Cook Minnow burn chance is stored in basis points:
+- `startArtisan(activityId)` settles the previous task, reads packed recipe data from `IdleIslesContent`, checks the profile, area, primary skill level, and materials, then starts the task.
+- Registered Artisan IDs are contiguous from `301` through `339`, covering Wood Armory, Bark Leggings, Copper/Iron/Steel/Tungsten Smithing recipes, Crafting light armor recipes, and Cook Minnow through Cook Leviathan.
+- Recipe costs and rewards are packed as up to three item/amount pairs. Settlement burns all packed costs per completed cycle and mints all packed rewards per completed cycle.
+- Cooking recipes use the same Artisan path, but their config includes cooked item and burn parameters. Raw fish is burned per attempt, Cooking XP is granted per attempt, and cooked food is minted only for successful attempts.
+- Cooking burn chance is stored in basis points:
 
 ```text
-burnChanceBps = max(0, 3500 - (cookingLevel - 1) * 300)
+burnChanceBps = max(minBurnChanceBps, burnChanceBps - (cookingLevel - 1) * burnReductionBpsPerLevel)
 ```
 
-- Burned Raw Minnow disappears permanently.
-- This is the first legitimate onchain gear creation path and avoids any production admin mint/faucet surface.
-- The current starter and T2 settlement code uses direct constants for these first slices to avoid unnecessary Solidity stack pressure and bytecode growth before the broader recipe/activity table is designed.
+- Burned raw fish disappears permanently.
+- This is the legitimate onchain gear creation path and avoids any production admin mint/faucet surface.
+- Some high-tier registered recipes still depend on combat drops or rare materials, but local gather/fishing/mining source routes are now represented onchain.
 
 Contract settlement:
 
 - `_settle` reads active task.
 - Applies 8-hour AFK cap.
 - Computes possible cycles from elapsed time and adjusted cycle seconds.
-- Applies `MAX_SETTLE_CYCLES`.
+- Applies the settlement cap: 1,000 cycles for non-combat activities and 200 cycles for combat.
 - Resolves cycles one by one.
 - Stops on auto-settle safety stop or death.
 - Emits `CombatSettled`.
@@ -976,20 +982,22 @@ Contract equipment:
 - The production design intentionally avoids admin item faucets. Equipment-loss tests should get gear through real onchain crafting/drop flows once those are implemented, not through privileged minting.
 - A burn-address transfer is not preferred for death loss. `_burn`/non-remint semantics are simpler for supply and ownership accounting because the item is destroyed rather than left as a balance at `0x...dead`.
 
-Contract marketplace:
+Hoard Hall marketplace:
 
-- `createOrder` settles first, validates amount/price, forbids listing Crowns, and transfers item escrow to the contract.
-- `buy` settles buyer first, transfers Crowns from buyer to seller, transfers escrowed item from contract to buyer, and decrements `amountRemaining`.
-- `cancelOrder` requires seller and returns remaining escrow.
+- `HoardHall.createOrder` validates profile, amount, and price, forbids listing Crowns, and transfers item escrow from the seller to `HoardHall`.
+- Sellers must approve `HoardHall` as an ERC-1155 operator on the `IdleIsles` token before listing.
+- `HoardHall.buy` validates profile, transfers Crowns from buyer to seller, transfers escrowed item from `HoardHall` to buyer, and decrements `amountRemaining`.
+- Buyers must approve `HoardHall` as an ERC-1155 operator on the `IdleIsles` token before buying because Crowns are ERC-1155 balances.
+- `HoardHall.cancelOrder` requires seller and returns remaining escrow.
+- Hoard Hall does not settle pending gameplay. Players need to claim pending activity output before listing newly earned items.
 
 Current contract gaps:
 
-- Gather activities are not fully implemented onchain; Ash Grove, Copper Ridge, and Tin Hollow are currently ported.
-- Artisan/smithing recipes are not fully implemented onchain; Wood Armory, Copper Smelter, and Copper Dagger are currently ported.
-- Full cooking and all fish tiers are not implemented onchain; River Bend and Cook Minnow are currently ported.
-- Full frontend item list is not ported into the content/core contract pair.
-- Frontend market category/detail UI is wired to bounded contract order reads, but still needs event-indexed history for larger markets.
-- Frontend Chain mode is available for the first core gameplay slice and marketplace transactions, but auto-settle configuration and full content parity remain future work.
+- Gather, Fishing, Mining, Artisan, Crafting, and Cooking definitions are registered onchain for the current local activity set.
+- Several high-tier recipes still depend on combat drops or rare material availability, so broader high-tier progression tests are still needed.
+- Full frontend item list is not ported into the content/core/market contract set.
+- Frontend market category/detail UI is wired to bounded `HoardHall` order reads, but still needs event-indexed history for larger markets.
+- Frontend Chain mode is available for the first core gameplay slice, expanded source routes, combat safety configuration, and Hoard Hall transactions, but scalable market indexing remains future work.
 - Broader contract tests are still needed for death, gear loss, rare drops, and future gather/artisan/cooking parity.
 - Starter equipment-loss tests now use gameplay-created gear. Broader equipment-loss edge tests are still needed for multiple gear tiers, odd Crown balances, and higher-risk combat paths.
 - Strong randomness is still needed before valuable production drops.
@@ -998,10 +1006,10 @@ Current contract gaps:
 
 Known areas where the frontend and contract differ:
 
-- Frontend has full gather/artisan/cooking simulation; contract currently focuses on combat/equipment/food/market foundation.
+- Frontend has local simulation for all current gather/artisan/cooking routes; contract now has packed Gather and Artisan/Cooking settlement for the current local activity set.
 - Frontend equipment does not remove equipped items from inventory; contract does.
 - Frontend local market supports realm-seeded liquidity and player listings; Chain mode supports contract orders with bounded direct reads instead of an indexed order book.
-- Frontend has all cooked fish heal amounts; contract currently includes only cooked Minnow and cooked Trout heal amounts.
+- Frontend has all cooked fish heal amounts; contract content now includes Cooked Minnow, Trout, Cod, Tuna, Manta, and Leviathan healing.
 - Frontend combat safety settings write to `configureAutoSettle` when auto-eat is enabled and clear safety with `clearAutoSettle` when auto-eat is disabled.
 - Frontend has deterministic local random rolls; contract uses block data and keccak.
 - Frontend cycle speed is in milliseconds; contract cycle speed is in seconds.
@@ -1061,7 +1069,7 @@ Contract compilation and bytecode-size checks are now handled through Hardhat:
 npm.cmd run build:contracts
 ```
 
-The current two-contract deployment stays under the EVM 24,576-byte deployed-code limit for each contract.
+The current three-contract deployment stays under the EVM 24,576-byte deployed-code limit for each contract.
 
 Contract scripts now available:
 
@@ -1079,7 +1087,7 @@ Latest contract build verification:
 npm.cmd run build:contracts
 ```
 
-Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the starter gather/artisan additions currently compile without a bytecode-size warning. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After tying Stop HP to auto-eat, deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the packed Gather/Artisan tables currently compile under the project bytecode budgets. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After extracting Hoard Hall, splitting settlement caps, and adding content-driven Gather settlement, deployed bytecode measures 22,759 bytes for `IdleIsles`, 10,762 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`.
 
 Latest full verification:
 
@@ -1090,7 +1098,7 @@ npm.cmd run build
 npm.cmd run lint
 ```
 
-Result: all pass after the onchain area travel pass. Contract tests are at 19 passing Node test-runner tests. Deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+Result: all pass after the Hoard Hall extraction, settlement cap split, and content-driven Gather pass. Contract tests are at 25 passing Node test-runner tests. Deployed bytecode measures 22,759 bytes for `IdleIsles`, 10,762 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`.
 
 Initial contract test coverage:
 
@@ -1098,9 +1106,12 @@ Initial contract test coverage:
 - Profile creation initializes profile state, 10 current HP, 80 Crowns, and 10 max HP.
 - One Training Yard combat cycle settles after elapsed time and grants Tanned Hide, Crowns, and combat XP.
 - Auto-settle HP safety can stop a combat task before a cycle resolves without applying death loss.
-- Marketplace listing escrows ERC-1155 items in the contract, fills to a buyer, transfers Crowns to the seller, and clears the order amount.
+- Hoard Hall listing escrows ERC-1155 items in the market contract, fills to a buyer, transfers Crowns to the seller, and clears the order amount.
 - Marketplace cancellation returns escrowed ERC-1155 items to the seller and clears the order amount.
 - Ash Grove and Wood Armory provide a gameplay path to starter gear without admin minting.
+- Packed Gather decoding is covered for expanded source content, and packed Artisan recipe decoding is covered for expanded Crafting content.
+- Pine Stand is covered through content-driven Gather settlement.
+- Bark Leggings and Craft Leather Cowl are craftable through the expanded recipe table.
 - Equipping crafted gear burns the wallet copy, and unequipping remints it.
 - Combat death clears equipped crafted gear without reminting it and burns half of Crowns after successful combat-cycle rewards are accounted for.
 - Copper Ridge and Tin Hollow provide a no-admin mining path to Copper Ore and Tin Ore.
@@ -1110,7 +1121,7 @@ Initial contract test coverage:
 - Raw Minnow cannot be eaten because content healing for raw fish is zero.
 - Cook Minnow consumes Raw Minnow, mints successful Cooked Minnow, destroys burned attempts, and grants Cooking XP for attempted cycles.
 - Cooked Minnow can heal HP and can be consumed by combat auto-eat.
-- Test deployment now mirrors production shape by deploying `IdleIslesContent` first and passing its address to the `IdleIsles` constructor.
+- Test deployment now mirrors production shape for gameplay by deploying `IdleIslesContent` first and passing its address to the `IdleIsles` constructor; marketplace tests also deploy `HoardHall` against the game contract.
 
 Latest contract test verification:
 
@@ -1118,11 +1129,11 @@ Latest contract test verification:
 npm.cmd run test:contracts
 ```
 
-Result: passes with 19 Node test-runner tests.
+Result: passes with 25 Node test-runner tests.
 
 Tooling note: after adding the expanded tests, the first rerun was blocked before test execution by a Windows `EPERM` rename failure in Hardhat's generated `cache/compile-cache.json` file. `npx.cmd hardhat clean` was run to clear generated cache/artifact state before rerunning the normal test script.
 
-Current result: passes with 19 Node test-runner tests, including area gates/travel guards, starter gather/artisan, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, combat safety toggling, equipment burn/remint, and combat death gear/Crown loss.
+Current result: passes with 25 Node test-runner tests, including area gates/travel guards, starter gather/artisan, packed expanded Gather and Artisan decoding, content-driven Pine Stand settlement, Bark Leggings, Craft Leather Cowl, Hoard Hall approval/escrow/fill/cancel paths, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, thousand-cycle cooking settlement, combat safety toggling, equipment burn/remint, and combat death gear/Crown loss.
 
 ## 23. Current Playable Alpha Status
 

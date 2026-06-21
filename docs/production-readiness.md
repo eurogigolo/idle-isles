@@ -27,6 +27,7 @@ contract tests, and the production frontend build.
 - Core area, item, and activity IDs have a checked registry in `content/core/ids.json`.
 - Frontend chain ID mappings are generated from the checked registry.
 - Contract bytecode budgets are enforced after every Solidity build.
+- Hoard Hall marketplace state is extracted from the core game contract into a separate escrow/order contract.
 
 ## Not Production Ready Yet
 

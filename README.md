@@ -25,14 +25,21 @@ contract tests, and the production frontend build in order.
 ## Contract Mode
 
 Local simulation remains the default play mode. To enable the Chain toggle for a deployed
-`IdleIsles` contract, copy `.env.example` to `.env`, then set the deployed core address:
+contract set, copy `.env.example` to `.env`, then set the deployed core and Hoard Hall addresses:
 
 ```bash
 VITE_IDLE_ISLES_ADDRESS=0x...
+VITE_HOARD_HALL_ADDRESS=0x...
 ```
 
 Then connect a wallet, switch to MegaETH Testnet, select `Chain`, and create or refresh the
 onchain profile.
+
+Chain mode supports either an injected wallet such as MetaMask or MOSS. With MOSS, select `MOSS`,
+connect the wallet, then approve `Gameplay Session` once. That session is scoped to the deployed
+`IdleIsles` contract for core gameplay calls such as starting activities, claiming, eating, and
+equipping. Hoard Hall orders and ship travel still require an explicit wallet confirmation because
+they can move escrowed items or spend Crowns.
 
 ## Deploy
 
@@ -43,14 +50,14 @@ MEGAETH_RPC_URL=https://carrot.megaeth.com/rpc
 MEGAETH_PRIVATE_KEY=0x...
 ```
 
-Deploy the content/core contract pair:
+Deploy the content/core/market contract set:
 
 ```bash
 npm run deploy:megaeth
 ```
 
 The deploy script writes `deployments/megaeth-testnet.json` and prints the
-`VITE_IDLE_ISLES_ADDRESS` value for frontend Chain mode.
+`VITE_IDLE_ISLES_ADDRESS` and `VITE_HOARD_HALL_ADDRESS` values for frontend Chain mode.
 
 ## Current Slice
 
@@ -59,14 +66,14 @@ The deploy script writes `deployments/megaeth-testnet.json` and prints the
 - Harbor Merchant route panel for local ship travel; the first Outer Isles passage costs 50,000 Crowns.
 - Combat, gathering, smithing, crafting, cooking, inventory, equipment, and claim loops.
 - Hoard Hall order panel using in-game crowns, player listings, and 5% Realm Scavenger buy floors.
-- Wallet connect and MegaETH Testnet network helper.
+- Wallet connect, MegaETH Testnet network helper, and optional MOSS gameplay session support.
 - Optional contract mode for profile reads, balances, `createProfile`, core activity starts, `claim`,
   `equip`, `unequip`, `eatFood`, marketplace order reads, listing, buying, cancellation, and ship
   travel between supported areas.
 - Area unlocks and ship travel are onchain for Starter Area and Outer Isles; higher-tier activity
   parity is still being ported.
-- MegaETH deploy script for `IdleIslesContent` + `IdleIsles`.
-- Starter Solidity contract in `contracts/IdleIsles.sol`, plus immutable content for the expanded combat/light-armor item definitions.
+- MegaETH deploy script for `IdleIslesContent` + `IdleIsles` + `HoardHall`.
+- Starter Solidity contract in `contracts/IdleIsles.sol`, immutable content in `contracts/IdleIslesContent.sol`, and extracted marketplace escrow in `contracts/HoardHall.sol`.
 
 ## MegaETH Testnet
 
@@ -76,14 +83,16 @@ The deploy script writes `deployments/megaeth-testnet.json` and prints the
 
 ## Contract Direction
 
-`IdleIsles.sol` uses ERC-1155 items for transferable resources, gear, drops, and crowns. It includes:
+`IdleIsles.sol` uses ERC-1155 items for transferable resources, gear, drops, and crowns. Core gameplay includes:
 
 - `createProfile`
-- `startActivity`
+- `startGather`
+- `startArtisan`
+- `startCombat`
 - `claim`
 - `equip`
-- `createOrder`
-- `buy`
+
+`HoardHall.sol` owns marketplace order state and uses standard ERC-1155 approvals to escrow listed items and transfer Crowns on fills.
 
 The frontend defaults to local simulation mode so the game loop can be tuned while Chain mode exercises the deployed contract slice.
 
