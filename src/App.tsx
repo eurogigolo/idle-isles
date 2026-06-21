@@ -190,8 +190,8 @@ const ITEM_ICONS: Record<ItemId, LucideIcon> = {
   runeDust: Gem,
 }
 
-const GROUPS: ActivityGroup[] = ['Gather', 'Combat', 'Artisan']
 type ActivitySubtabGroup = Extract<ActivityGroup, 'Gather' | 'Artisan'>
+const RESOURCE_GROUPS: ActivitySubtabGroup[] = ['Gather', 'Artisan']
 const ACTIVITY_SUBTABS: Record<ActivitySubtabGroup, SkillId[]> = {
   Gather: ['woodcutting', 'fishing', 'mining'],
   Artisan: ['smithing', 'crafting', 'cooking'],
@@ -217,7 +217,7 @@ function App() {
   const [game, setGame] = useState<GameState>(readSave)
   const [now, setNow] = useState(BOOT_TIME)
   const [playMode, setPlayMode] = useState<PlayMode>('local')
-  const [selectedGroup, setSelectedGroup] = useState<ActivityGroup>('Gather')
+  const [selectedGroup, setSelectedGroup] = useState<ActivitySubtabGroup>('Gather')
   const [selectedActivitySkill, setSelectedActivitySkill] = useState<
     Record<ActivitySubtabGroup, SkillId>
   >({
@@ -244,15 +244,9 @@ function App() {
   )
   const activeActivity = displayGame.active ? ACTIVITY_BY_ID[displayGame.active.id] : null
   const currentArea = AREA_BY_ID[displayGame.currentAreaId]
-  const selectedSubtabGroup: ActivitySubtabGroup | null =
-    selectedGroup === 'Gather' || selectedGroup === 'Artisan' ? selectedGroup : null
-  const activitySubtabs = selectedSubtabGroup ? ACTIVITY_SUBTABS[selectedSubtabGroup] : null
-  const selectedActivitySubtab = selectedSubtabGroup
-    ? selectedActivitySkill[selectedSubtabGroup]
-    : null
-  const activityListLabel = selectedActivitySubtab
-    ? SKILL_NAMES[selectedActivitySubtab]
-    : selectedGroup
+  const activitySubtabs = ACTIVITY_SUBTABS[selectedGroup]
+  const selectedActivitySubtab = selectedActivitySkill[selectedGroup]
+  const activityListLabel = SKILL_NAMES[selectedActivitySubtab]
   const chainProfileLock =
     isChainMode && !chainSnapshot?.hasProfile ? 'Create profile first' : null
   const localPreview = useMemo(() => getClaimPreview(game, now), [game, now])
@@ -267,11 +261,15 @@ function App() {
     isChainMode && chainSnapshot
       ? getChainReadyCycles(chainSnapshot, activeActivity, now)
       : preview.cycles
-  const visibleActivities = ACTIVITIES.filter(
+  const visibleResourceActivities = ACTIVITIES.filter(
     (activity) =>
       getActivityAreaId(activity) === displayGame.currentAreaId &&
       activity.group === selectedGroup &&
       (!selectedActivitySubtab || activity.primarySkill === selectedActivitySubtab),
+  )
+  const visibleCombatActivities = ACTIVITIES.filter(
+    (activity) =>
+      getActivityAreaId(activity) === displayGame.currentAreaId && activity.group === 'Combat',
   )
   const visibleInventoryItems = (Object.keys(ITEMS) as ItemId[]).filter(
     (itemId) => itemId !== 'crowns' && displayGame.inventory[itemId] > 0,
@@ -1070,23 +1068,23 @@ function App() {
             </div>
           </div>
 
-          <div className="action-dock panel">
-            <div className="dock-heading">
-              <div className="activity-tabs">
-                <div className="segmented" aria-label="Activity group">
-                  {GROUPS.map((group) => (
-                    <button
-                      type="button"
-                      key={group}
-                      className={selectedGroup === group ? 'selected' : ''}
-                      onClick={() => setSelectedGroup(group)}
-                    >
-                      <span>{group}</span>
-                    </button>
-                  ))}
-                </div>
+          <div className="action-panels">
+            <section className="action-dock panel resource-action-panel">
+              <div className="dock-heading">
+                <div className="activity-tabs">
+                  <div className="segmented resource-segmented" aria-label="Resource activity group">
+                    {RESOURCE_GROUPS.map((group) => (
+                      <button
+                        type="button"
+                        key={group}
+                        className={selectedGroup === group ? 'selected' : ''}
+                        onClick={() => setSelectedGroup(group)}
+                      >
+                        <span>{group}</span>
+                      </button>
+                    ))}
+                  </div>
 
-                {selectedSubtabGroup && activitySubtabs && (
                   <div className="segmented sub-segmented" aria-label={`${selectedGroup} skill`}>
                     {activitySubtabs.map((skillId) => {
                       const Icon = SKILL_ICONS[skillId]
@@ -1099,7 +1097,7 @@ function App() {
                           onClick={() =>
                             setSelectedActivitySkill((current) => ({
                               ...current,
-                              [selectedSubtabGroup]: skillId,
+                              [selectedGroup]: skillId,
                             }))
                           }
                         >
@@ -1109,40 +1107,163 @@ function App() {
                       )
                     })}
                   </div>
+                </div>
+              </div>
+
+              <div className="activity-list">
+                {visibleResourceActivities.length === 0 ? (
+                  <div className="empty-activities">
+                    No {activityListLabel.toLowerCase()} routes in {currentArea.name}
+                  </div>
+                ) : (
+                  visibleResourceActivities.map((activity) => (
+                    <ActivityButton
+                      activity={activity}
+                      game={displayGame}
+                      isActive={displayGame.active?.id === activity.id}
+                      modeLock={
+                        chainProfileLock ??
+                        (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
+                      }
+                      key={activity.id}
+                      onStart={() => startActivity(activity.id)}
+                    />
+                  ))
                 )}
               </div>
-              <button
-                type="button"
-                className="claim-button"
-                onClick={claim}
-                disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
-              >
-                <CircleDollarSign size={18} />
-                <span>Claim</span>
-              </button>
-            </div>
+            </section>
 
-            <div className="activity-list">
-              {visibleActivities.length === 0 ? (
-                <div className="empty-activities">
-                  No {activityListLabel.toLowerCase()} routes in {currentArea.name}
+            <section className="action-dock panel combat-action-panel">
+              <div className="dock-heading combat-heading">
+                <div className="combat-heading-copy">
+                  <Swords size={18} />
+                  <strong>Combat</strong>
                 </div>
-              ) : (
-                visibleActivities.map((activity) => (
-                  <ActivityButton
-                    activity={activity}
-                    game={displayGame}
-                    isActive={displayGame.active?.id === activity.id}
-                    modeLock={
-                      chainProfileLock ??
-                      (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
-                    }
-                    key={activity.id}
-                    onStart={() => startActivity(activity.id)}
-                  />
-                ))
-              )}
-            </div>
+                <button
+                  type="button"
+                  className="claim-button"
+                  onClick={claim}
+                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                >
+                  <CircleDollarSign size={18} />
+                  <span>Claim</span>
+                </button>
+              </div>
+
+              <div className="activity-list combat-list">
+                {visibleCombatActivities.length === 0 ? (
+                  <div className="empty-activities">
+                    No combat routes in {currentArea.name}
+                  </div>
+                ) : (
+                  visibleCombatActivities.map((activity) => (
+                    <ActivityButton
+                      activity={activity}
+                      game={displayGame}
+                      isActive={displayGame.active?.id === activity.id}
+                      modeLock={
+                        chainProfileLock ??
+                        (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
+                      }
+                      key={activity.id}
+                      onStart={() => startActivity(activity.id)}
+                    />
+                  ))
+                )}
+              </div>
+
+              <div className="combat-safety">
+                <div className="combat-safety-title">
+                  <Heart size={16} />
+                  <strong>Combat Safety</strong>
+                </div>
+                <div className="safety-controls">
+                  <label className="safety-toggle">
+                    <input
+                      type="checkbox"
+                      checked={displayGame.combatSettings.autoEat}
+                      onChange={(event) => updateCombatSettings({ autoEat: event.target.checked })}
+                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                    />
+                    <span>Auto-eat</span>
+                  </label>
+
+                  <label>
+                    <span>Food</span>
+                    <select
+                      value={displayGame.combatSettings.foodItemId ?? ''}
+                      onChange={(event) =>
+                        updateCombatSettings({
+                          foodItemId: (event.target.value as ItemId) || null,
+                        })
+                      }
+                      disabled={
+                        foodItems.length === 0 ||
+                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
+                      }
+                    >
+                      {foodItems.map((itemId) => (
+                        <option value={itemId} key={itemId}>
+                          {ITEMS[itemId].name} ({displayGame.inventory[itemId]})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label>
+                    <span>Stop HP</span>
+                    <input
+                      min="1"
+                      max={Math.max(1, maxHitpoints - 1)}
+                      step="1"
+                      type="number"
+                      value={displayGame.combatSettings.stopAtHitpoints}
+                      onChange={(event) =>
+                        updateCombatSettings({
+                          stopAtHitpoints: Math.max(
+                            1,
+                            Math.floor(Number(event.target.value) || 1),
+                          ),
+                        })
+                      }
+                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                    />
+                  </label>
+
+                  <label>
+                    <span>Max food</span>
+                    <input
+                      min="1"
+                      max="99"
+                      step="1"
+                      type="number"
+                      value={displayGame.combatSettings.maxFoodPerClaim}
+                      onChange={(event) =>
+                        updateCombatSettings({
+                          maxFoodPerClaim: Math.max(
+                            1,
+                            Math.floor(Number(event.target.value) || 1),
+                          ),
+                        })
+                      }
+                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                    />
+                  </label>
+
+                  {isChainMode && (
+                    <button
+                      type="button"
+                      className="safety-action"
+                      onClick={() => void saveChainCombatSafety()}
+                      disabled={!chainSnapshot?.hasProfile || chainBusy}
+                    >
+                      <Heart size={15} />
+                      <span>Toggle Auto-Eat</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            </section>
           </div>
         </section>
 
@@ -1221,87 +1342,6 @@ function App() {
               <span>ATK +{equipmentStats.attack}</span>
               <span>DEF +{equipmentStats.defence}</span>
               <span>HP +{equipmentStats.hitpoints}</span>
-            </div>
-          </section>
-
-          <section className="panel safety-panel">
-            <PanelTitle icon={Heart} title="Combat Safety" />
-            <div className="safety-controls">
-              <label className="safety-toggle">
-                <input
-                  type="checkbox"
-                  checked={displayGame.combatSettings.autoEat}
-                  onChange={(event) => updateCombatSettings({ autoEat: event.target.checked })}
-                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
-                />
-                <span>Auto-eat</span>
-              </label>
-
-              <label>
-                <span>Food</span>
-                <select
-                  value={displayGame.combatSettings.foodItemId ?? ''}
-                  onChange={(event) =>
-                    updateCombatSettings({ foodItemId: (event.target.value as ItemId) || null })
-                  }
-                  disabled={
-                    foodItems.length === 0 ||
-                    (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
-                  }
-                >
-                  {foodItems.map((itemId) => (
-                    <option value={itemId} key={itemId}>
-                      {ITEMS[itemId].name} ({displayGame.inventory[itemId]})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                <span>Stop HP</span>
-                <input
-                  min="1"
-                  max={Math.max(1, maxHitpoints - 1)}
-                  step="1"
-                  type="number"
-                  value={displayGame.combatSettings.stopAtHitpoints}
-                  onChange={(event) =>
-                    updateCombatSettings({
-                      stopAtHitpoints: Math.max(1, Math.floor(Number(event.target.value) || 1)),
-                    })
-                  }
-                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
-                />
-              </label>
-
-              <label>
-                <span>Max food</span>
-                <input
-                  min="1"
-                  max="99"
-                  step="1"
-                  type="number"
-                  value={displayGame.combatSettings.maxFoodPerClaim}
-                  onChange={(event) =>
-                    updateCombatSettings({
-                      maxFoodPerClaim: Math.max(1, Math.floor(Number(event.target.value) || 1)),
-                    })
-                  }
-                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
-                />
-              </label>
-
-              {isChainMode && (
-                <button
-                  type="button"
-                  className="safety-action"
-                  onClick={() => void saveChainCombatSafety()}
-                  disabled={!chainSnapshot?.hasProfile || chainBusy}
-                >
-                  <Heart size={15} />
-                  <span>Save Chain Safety</span>
-                </button>
-              )}
             </div>
           </section>
 
