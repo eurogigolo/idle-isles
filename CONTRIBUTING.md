@@ -24,13 +24,21 @@ The verification script includes dependency audit, content ID validation, byteco
 intentionally runs Hardhat build and tests sequentially. Running multiple Hardhat compile/test
 commands in parallel can race on the local cache.
 
+After changing `content/core/ids.json`, regenerate derived frontend chain mappings:
+
+```bash
+npm run content:generate
+```
+
+`npm run verify` fails if generated content ID output is stale.
+
 ## Gameplay Changes
 
 For content or rules changes, keep the duplicated alpha sources aligned:
 
 - `src/game.ts` for local gameplay.
-- `src/chain.ts` for frontend contract ID mappings.
 - `content/core/ids.json` for namespaced/numeric ID registry changes.
+- `src/generated/contentIds.ts` for generated frontend contract ID mappings.
 - `contracts/IdleIsles.sol` and `contracts/IdleIslesContent.sol` for onchain behavior.
 - `test/IdleIsles.ts` for contract coverage.
 - `solidity-notes.md` for contract-facing design notes.

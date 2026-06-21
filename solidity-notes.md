@@ -34,7 +34,7 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 - Static item/combat content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
 - Current compiled bytecode after adding onchain area travel: `IdleIsles` is 24,079 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 17-test Hardhat suite passes against the two-contract deployment shape.
 - `npm run bytecode:contracts` enforces a 24,200-byte project budget for `IdleIsles`, below the 24,576-byte EIP-170 deployed bytecode limit.
-- Core area, item, and activity IDs are now recorded in `content/core/ids.json` and checked by `npm run content:check`. This is a registry seed, not full source-of-truth generation yet.
+- Core area, item, and activity IDs are now recorded in `content/core/ids.json` and checked by `npm run content:check`. The registry generates frontend chain mappings in `src/generated/contentIds.ts`, but it is not yet the full gameplay or Solidity source of truth.
 - Auto-settle session preferences exist through `configureAutoSettle`.
 - Authorized operators can call `settleFor`.
 - Session safety can stop combat at a configured HP threshold.
@@ -96,7 +96,6 @@ xpRequiredForLevel(L) = 75 * (L - 1)^2 + 45 * (L - 1)^3 + (L - 1)^4
 
 - Add `currentHitpoints`.
 - Continue porting Outer Isles activity content behind the onchain area gates.
-- Add generated area IDs once content generation replaces manual mappings.
 - Add max HP calculation from Hitpoints level plus equipped gear bonuses.
 - Clamp current HP when gear is unequipped and max HP drops.
 - Prevent combat start when current HP is 0.
@@ -735,13 +734,13 @@ Do not approve a content pack into chain mode without tests that exercise the ac
 The same content source should eventually generate:
 
 - TypeScript content maps.
-- Frontend item/activity ID maps.
+- Frontend item/activity ID maps. The first version exists as `src/generated/contentIds.ts`.
 - Solidity constants or lookup data.
 - Contract test fixtures.
 - Human-readable balance reports.
 - Deployment metadata.
 
-Manual duplication across `src/game.ts`, `src/chain.ts`, `IdleIsles.sol`, `IdleIslesContent.sol`, tests, and docs is acceptable for the current alpha, but it is not acceptable for a mature community-content pipeline.
+Manual duplication across `src/game.ts`, `IdleIsles.sol`, `IdleIslesContent.sol`, tests, and docs is acceptable for the current alpha, but it is not acceptable for a mature community-content pipeline.
 
 ### Events
 

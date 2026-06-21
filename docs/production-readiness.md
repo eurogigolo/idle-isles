@@ -25,6 +25,7 @@ contract tests, and the production frontend build.
 - Production and development dependency audit currently reports zero vulnerabilities.
 - Chain mode has onchain Starter Area/Outer Isles travel and area gating.
 - Core area, item, and activity IDs have a checked registry in `content/core/ids.json`.
+- Frontend chain ID mappings are generated from the checked registry.
 - Contract bytecode budgets are enforced after every Solidity build.
 
 ## Not Production Ready Yet
@@ -32,7 +33,7 @@ contract tests, and the production frontend build.
 - Contracts are unaudited.
 - Chain mode does not cover all local gameplay systems.
 - Many local Outer Isles activities still lack contract settlement parity.
-- Community content is not generated from a shared source of truth yet.
+- Full gameplay and contract content are not generated from a shared source of truth yet.
 - Contract randomness is alpha-grade and not suitable for valuable rare drops.
 - Main economy content has no formal balance-report gate.
 - Deployment records do not yet include content source hashes.
@@ -42,8 +43,8 @@ contract tests, and the production frontend build.
 
 1. Keep `npm run verify` green on every change.
 2. Add contract tests for every supported Chain mode path.
-3. Extract core content into structured data and generate TypeScript maps from it.
-4. Generate frontend chain IDs, Solidity lookup data, and test fixtures from the same source.
+3. Extract core content into structured data and generate local gameplay maps from it.
+4. Generate Solidity lookup data and test fixtures from the same source.
 5. Port remaining local activity settlement paths into contract parity only after the generator path is in place.
 6. Add schema validation and balance-report tooling for full content definitions.
 7. Replace alpha rare-drop randomness before promoting valuable drops.

@@ -9,17 +9,18 @@ Idle Isles is currently a Vite + React + TypeScript idle RPG prototype with a So
 Primary files:
 
 - `src/App.tsx`: application shell, local/chain mode UI, wallet/network UI, activity controls, equipment/inventory UI, Hoard Hall UI, and event log.
-- `src/chain.ts`: MegaETH Testnet contract configuration, frontend item/activity ID mappings, minimal `IdleIsles` ABI, profile snapshot reads, and core write helpers.
+- `src/chain.ts`: MegaETH Testnet contract configuration, minimal `IdleIsles` ABI, profile snapshot reads, and core write helpers.
 - `src/game.ts`: authoritative local simulation data and pure gameplay functions.
 - `src/App.css`: visual layout, responsive UI, and CSS-rendered activity scenes.
 - `contracts/IdleIsles.sol`: current Solidity alpha foundation for profile creation, combat settlement, equipment, food, marketplace orders, death penalty, and session settlement.
 - `contracts/IdleIslesContent.sol`: immutable static content contract for item slots, item stats, food healing, combat activity definitions, and combat drop tables.
 - `contracts/IIdleIslesContent.sol`: interface shared by the core contract and the deployed content contract.
-- `content/core/ids.json`: checked core namespace and numeric ID registry for areas, items, and activities. This is migration scaffolding before content generation becomes the source of truth.
+- `content/core/ids.json`: checked core namespace and numeric ID registry for areas, items, and activities. It generates frontend chain mappings and remains migration scaffolding before full content generation becomes the source of truth.
 - `hardhat.config.ts`: Hardhat 3 configuration for contract builds/tests using the viem, network helper, and Node test-runner plugins, Solidity 0.8.28, and 1 optimizer run on both default and production profiles. The contract pragma remains `^0.8.24`, but OpenZeppelin 5.6.1 requires a compiler new enough for the `mcopy` builtin. Optimized default builds are required because bytecode size is a hard constraint for the stateful core contract. The optimizer is biased toward smaller deployed bytecode because gameplay content is currently the limiting factor.
 - `scripts/deploy.ts`: Hardhat 3 + viem deployment script for the `IdleIslesContent` and `IdleIsles` contract pair. It writes deployment addresses to `deployments/<network>.json`.
 - `scripts/check-bytecode-size.mjs`: deployed bytecode budget gate. `IdleIsles` currently has a 24,200-byte project budget below the 24,576-byte EIP-170 hard limit.
 - `scripts/check-content-ids.mjs`: validates the core ID registry for namespace format, uniqueness, and basic references.
+- `scripts/generate-content-ids.mjs`: generates `src/generated/contentIds.ts` from the checked core ID registry.
 - `test/IdleIsles.ts`: Node test runner + viem contract tests for level thresholds, profile creation, and training combat settlement.
 - `plan.md`: playable alpha roadmap.
 - `solidity-notes.md`: contract parity checklist and onchain implementation notes.
@@ -1195,8 +1196,8 @@ Current local constraints:
 
 Current chain constraints:
 
-- `src/chain.ts` maps frontend item IDs to numeric ERC-1155 IDs.
-- `src/chain.ts` maps only a smaller subset of frontend activities to contract activity IDs.
+- `src/generated/contentIds.ts` maps registered frontend item IDs to numeric ERC-1155 IDs.
+- `src/generated/contentIds.ts` maps registered frontend activities to contract activity IDs.
 - `IdleIsles` stores an immutable `IdleIslesContent` address.
 - `IdleIslesContent` is ownerless and pure lookup based.
 - The current contract has no production owner/admin role.
@@ -1309,7 +1310,7 @@ The core economy class needs the strongest controls. Any content that can mint C
 The current project has duplicated truth:
 
 - Local definitions in `src/game.ts`.
-- Frontend contract mappings in `src/chain.ts`.
+- Frontend contract mappings generated from `content/core/ids.json` into `src/generated/contentIds.ts`.
 - Solidity constants and branch logic in `contracts/IdleIsles.sol`.
 - Pure lookup data in `contracts/IdleIslesContent.sol`.
 - Tests that duplicate numeric item and activity IDs.
@@ -1341,7 +1342,7 @@ Generated outputs:
 - Test fixtures that use generated IDs instead of hand-copied constants.
 - Human-readable balance reports.
 
-Until a generator exists, every content update must manually keep `src/game.ts`, `src/chain.ts`, `contracts`, tests, and docs aligned.
+Until full content generation exists, every content update must manually keep `src/game.ts`, `contracts`, tests, and docs aligned. Frontend chain ID drift is now checked through `npm run content:check`.
 
 ### Runtime Loading
 
@@ -1532,12 +1533,11 @@ Recommended implementation order:
 5. Move icon and scene selection to safe category fields.
 6. Generate derived maps such as `ITEMS`, `ACTIVITY_BY_ID`, `MARKET_ITEMS`, and item source/use indexes.
 7. Add balance-report tooling.
-8. Generate frontend chain mappings from the same source data.
-9. Generate contract fixture IDs for tests.
-10. Port remaining local gameplay to contract parity.
-11. Introduce curated compile-time packs.
-12. Add runtime local-only pack loading if still desirable.
-13. Evaluate an onchain approved content registry only after parity and test coverage are mature.
+8. Generate contract fixture IDs for tests.
+9. Port remaining local gameplay to contract parity.
+10. Introduce curated compile-time packs.
+11. Add runtime local-only pack loading if still desirable.
+12. Evaluate an onchain approved content registry only after parity and test coverage are mature.
 
 ### Documentation Requirements
 
