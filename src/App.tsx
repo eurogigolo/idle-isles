@@ -29,6 +29,7 @@ import type { Address } from 'viem'
 import {
   ACTIVITIES,
   ACTIVITY_BY_ID,
+  AFK_CAP_MS,
   AREAS,
   AREA_BY_ID,
   EQUIPMENT_SLOTS,
@@ -257,12 +258,14 @@ function App() {
   const preview = useMemo(
     () =>
       isChainMode && chainSnapshot
-        ? getChainPreview(chainSnapshot, activeActivity)
+        ? getChainPreview(chainSnapshot, activeActivity, now)
         : localPreview,
-    [activeActivity, chainSnapshot, isChainMode, localPreview],
+    [activeActivity, chainSnapshot, isChainMode, localPreview, now],
   )
   const totalReadyCycles =
-    isChainMode && chainSnapshot ? chainSnapshot.pendingCycles : preview.cycles
+    isChainMode && chainSnapshot
+      ? getChainReadyCycles(chainSnapshot, activeActivity, now)
+      : preview.cycles
   const visibleActivities = ACTIVITIES.filter(
     (activity) =>
       getActivityAreaId(activity) === displayGame.currentAreaId &&
@@ -1706,14 +1709,17 @@ function gameFromChainSnapshot(snapshot: ChainSnapshot, fallback: GameState): Ga
 function getChainPreview(
   snapshot: ChainSnapshot,
   activity: ActivityDefinition | null,
+  now: number,
 ): ClaimPreview {
   const cycleMs = activity?.cycleMs ?? 0
-  const claimableCycles = Math.min(snapshot.pendingCycles, CHAIN_SETTLE_CYCLE_LIMIT)
+  const elapsedMs = getChainElapsedMs(snapshot, activity, now)
+  const totalReadyCycles = getChainReadyCycles(snapshot, activity, now)
+  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
 
   return {
     cycles: claimableCycles,
-    progressPct: 0,
-    elapsedMs: claimableCycles * cycleMs,
+    progressPct: cycleMs > 0 ? ((elapsedMs % cycleMs) / cycleMs) * 100 : 0,
+    elapsedMs,
     cycleMs,
     xp: {},
     rewards: {},
@@ -1730,6 +1736,33 @@ function getChainPreview(
       lostEquipment: [],
     },
   }
+}
+
+function getChainReadyCycles(
+  snapshot: ChainSnapshot,
+  activity: ActivityDefinition | null,
+  now: number,
+) {
+  if (!snapshot.active || !activity || activity.cycleMs <= 0) {
+    return 0
+  }
+
+  return Math.floor(getChainElapsedMs(snapshot, activity, now) / activity.cycleMs)
+}
+
+function getChainElapsedMs(
+  snapshot: ChainSnapshot,
+  activity: ActivityDefinition | null,
+  now: number,
+) {
+  if (!snapshot.active || !activity || activity.cycleMs <= 0) {
+    return 0
+  }
+
+  const liveElapsedMs = Math.max(0, now - snapshot.active.lastClaimAt)
+  const snapshotElapsedMs = snapshot.pendingCycles * activity.cycleMs
+
+  return Math.min(AFK_CAP_MS, Math.max(liveElapsedMs, snapshotElapsedMs))
 }
 
 function formatReadyCycles(claimableCycles: number, totalReadyCycles: number) {
