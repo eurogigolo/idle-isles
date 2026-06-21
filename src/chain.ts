@@ -11,6 +11,11 @@ import {
 } from 'viem'
 import { megaethTestnet } from 'viem/chains'
 import {
+  CONTRACT_ACTIVITY_IDS,
+  CONTRACT_AREA_IDS,
+  CONTRACT_ITEM_IDS,
+} from './generated/contentIds'
+import {
   AREAS,
   EQUIPMENT_SLOTS,
   ITEMS,
@@ -48,8 +53,6 @@ export interface ChainSnapshot {
   pendingCycles: number
 }
 
-type ContractStartKind = 'combat' | 'gather' | 'artisan'
-
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 const CHAIN_MARKET_SCAN_LIMIT = 120
 
@@ -64,107 +67,6 @@ export const MEGAETH_TESTNET_PARAMS = {
   rpcUrls: ['https://carrot.megaeth.com/rpc'],
   blockExplorerUrls: ['https://megaeth-testnet-v2.blockscout.com'],
 }
-
-export const CONTRACT_AREA_IDS = {
-  starterArea: 1,
-  outerIsles: 2,
-} satisfies Record<AreaId, number>
-
-export const CONTRACT_ITEM_IDS = {
-  crowns: 1n,
-  ashLog: 2n,
-  pineLog: 3n,
-  oakLog: 4n,
-  ironbarkLog: 5n,
-  elderLog: 6n,
-  spiritwoodLog: 7n,
-  rawMinnow: 8n,
-  cookedMinnow: 9n,
-  rawTrout: 10n,
-  cookedTrout: 11n,
-  rawCod: 12n,
-  cookedCod: 13n,
-  rawTuna: 14n,
-  cookedTuna: 15n,
-  rawManta: 16n,
-  cookedManta: 17n,
-  rawLeviathan: 18n,
-  cookedLeviathan: 19n,
-  treantBark: 20n,
-  hollowSeed: 21n,
-  copperOre: 30n,
-  tinOre: 31n,
-  ironOre: 32n,
-  coalOre: 33n,
-  cobaltOre: 34n,
-  tungstenOre: 37n,
-  bronzeBar: 40n,
-  ironBar: 41n,
-  steelBar: 42n,
-  tungstenBar: 43n,
-  woodClub: 50n,
-  barkShield: 51n,
-  barkVest: 52n,
-  copperDagger: 53n,
-  copperHelm: 54n,
-  copperPlate: 55n,
-  ironSword: 56n,
-  ironHelm: 57n,
-  ironPlate: 58n,
-  steelLongsword: 59n,
-  steelHelm: 60n,
-  steelPlate: 61n,
-  tungstenBlade: 62n,
-  tungstenHelm: 63n,
-  tungstenPlate: 64n,
-  barkLeggings: 65n,
-  copperLegs: 66n,
-  ironLegs: 67n,
-  steelLegs: 68n,
-  tungstenLegs: 69n,
-  tannedHide: 70n,
-  fieldCharm: 71n,
-  runeDust: 72n,
-  thickHide: 73n,
-  ruggedHide: 74n,
-  cobaltScale: 75n,
-  wyrmHide: 76n,
-  leatherCowl: 80n,
-  leatherBody: 81n,
-  hardleatherCowl: 82n,
-  hardleatherBody: 83n,
-  carapaceCowl: 84n,
-  carapaceBody: 85n,
-  cobaltMeshCowl: 86n,
-  cobaltMeshBody: 87n,
-  dragonhideCowl: 88n,
-  dragonhideBody: 89n,
-  leatherChaps: 90n,
-  hardleatherChaps: 91n,
-  carapaceLegs: 92n,
-  cobaltMeshLegs: 93n,
-  dragonhideChaps: 94n,
-} satisfies Record<ItemId, bigint>
-
-export const CONTRACT_ACTIVITY_IDS: Partial<
-  Record<ActivityId, { id: number; kind: ContractStartKind }>
-> = {
-  trainingYard: { id: 101, kind: 'combat' },
-  fieldRat: { id: 102, kind: 'combat' },
-  mossCamp: { id: 103, kind: 'combat' },
-  caveBat: { id: 104, kind: 'combat' },
-  banditScout: { id: 105, kind: 'combat' },
-  cryptKnight: { id: 106, kind: 'combat' },
-  hollowTreant: { id: 107, kind: 'combat' },
-  ashGrove: { id: 201, kind: 'gather' },
-  copperRidge: { id: 202, kind: 'gather' },
-  tinHollow: { id: 203, kind: 'gather' },
-  riverBend: { id: 204, kind: 'gather' },
-  woodArmory: { id: 301, kind: 'artisan' },
-  smelter: { id: 302, kind: 'artisan' },
-  copperArmory: { id: 303, kind: 'artisan' },
-  cookMinnow: { id: 304, kind: 'artisan' },
-} satisfies Partial<Record<ActivityId, { id: number; kind: ContractStartKind }>>
 
 const CONTRACT_ACTIVITY_BY_ID = Object.fromEntries(
   Object.entries(CONTRACT_ACTIVITY_IDS).map(([activityId, value]) => [
