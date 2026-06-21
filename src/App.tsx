@@ -85,6 +85,7 @@ import {
   writeBuyOrder,
   writeCancelOrder,
   writeClaim,
+  writeClearCombatSafety,
   writeConfigureCombatSafety,
   writeCreateOrder,
   writeCreateProfile,
@@ -558,6 +559,14 @@ function App() {
       const message = 'Select food for onchain auto-eat.'
       setWalletNote(message)
       pushChainLog(message)
+      return
+    }
+
+    if (!settings.autoEat) {
+      await runChainTransaction(
+        (provider, activeAccount) => writeClearCombatSafety(provider, activeAccount),
+        'Auto-eat disabled. Combat can now continue past Stop HP.',
+      )
       return
     }
 
@@ -1198,6 +1207,7 @@ function App() {
                         })
                       }
                       disabled={
+                        !displayGame.combatSettings.autoEat ||
                         foodItems.length === 0 ||
                         (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
                       }
@@ -1226,7 +1236,10 @@ function App() {
                           ),
                         })
                       }
-                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                      disabled={
+                        !displayGame.combatSettings.autoEat ||
+                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
+                      }
                     />
                   </label>
 
@@ -1246,7 +1259,10 @@ function App() {
                           ),
                         })
                       }
-                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                      disabled={
+                        !displayGame.combatSettings.autoEat ||
+                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
+                      }
                     />
                   </label>
 

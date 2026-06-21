@@ -65,7 +65,7 @@ Current playable loop:
 3. Completed cycles become claimable.
 4. Claiming grants XP/items or consumes materials.
 5. Combat cycles auto-resolve while the app is open and can damage the player.
-6. Combat safety settings can auto-eat food or stop combat at a configured HP threshold.
+6. Combat safety settings can auto-eat food and stop combat at a configured HP threshold while auto-eat is enabled.
 7. Food restores Hitpoints.
 8. Equipment changes stats and unlocks harder combat.
 9. Items can be listed, bought, cancelled, and inspected in a local Hoard Hall simulation.
@@ -429,6 +429,7 @@ Death penalty:
 Combat safety:
 
 - Safety is checked before each simulated combat cycle.
+- Stop-at HP is active only while auto-eat is enabled.
 - If auto-eat is enabled and HP is at or below the configured threshold, the selected food is consumed before the next cycle if available.
 - Food use is limited by `maxFoodPerClaim`.
 - If food raises HP above the threshold, combat continues.
@@ -1001,7 +1002,7 @@ Known areas where the frontend and contract differ:
 - Frontend equipment does not remove equipped items from inventory; contract does.
 - Frontend local market supports realm-seeded liquidity and player listings; Chain mode supports contract orders with bounded direct reads instead of an indexed order book.
 - Frontend has all cooked fish heal amounts; contract currently includes only cooked Minnow and cooked Trout heal amounts.
-- Frontend combat safety settings now model auto-eat and stop-at HP locally; contract has analogous `configureAutoSettle` fields, but the frontend is not wired to write them yet.
+- Frontend combat safety settings write to `configureAutoSettle` when auto-eat is enabled and clear safety with `clearAutoSettle` when auto-eat is disabled.
 - Frontend has deterministic local random rolls; contract uses block data and keccak.
 - Frontend cycle speed is in milliseconds; contract cycle speed is in seconds.
 - Chain mode has onchain Starter Area and Outer Isles travel, but many local Outer Isles activities are still waiting for contract settlement parity.
@@ -1078,7 +1079,7 @@ Latest contract build verification:
 npm.cmd run build:contracts
 ```
 
-Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the starter gather/artisan additions currently compile without a bytecode-size warning. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After adding onchain area travel, deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the starter gather/artisan additions currently compile without a bytecode-size warning. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After tying Stop HP to auto-eat, deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
 
 Latest full verification:
 
@@ -1089,7 +1090,7 @@ npm.cmd run build
 npm.cmd run lint
 ```
 
-Result: all pass after the onchain area travel pass. Contract tests are at 17 passing Node test-runner tests. Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+Result: all pass after the onchain area travel pass. Contract tests are at 19 passing Node test-runner tests. Deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
 
 Initial contract test coverage:
 
@@ -1117,11 +1118,11 @@ Latest contract test verification:
 npm.cmd run test:contracts
 ```
 
-Result: passes with 17 Node test-runner tests.
+Result: passes with 19 Node test-runner tests.
 
 Tooling note: after adding the expanded tests, the first rerun was blocked before test execution by a Windows `EPERM` rename failure in Hardhat's generated `cache/compile-cache.json` file. `npx.cmd hardhat clean` was run to clear generated cache/artifact state before rerunning the normal test script.
 
-Current result: passes with 17 Node test-runner tests, including area gates/travel guards, starter gather/artisan, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, equipment burn/remint, and combat death gear/Crown loss.
+Current result: passes with 19 Node test-runner tests, including area gates/travel guards, starter gather/artisan, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, combat safety toggling, equipment burn/remint, and combat death gear/Crown loss.
 
 ## 23. Current Playable Alpha Status
 

@@ -32,13 +32,12 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 - Revert strings were replaced with Solidity custom errors to reduce deployed bytecode while keeping guard failures typed and explicit.
 - Item and activity constants are internal, with numeric IDs documented in this file and the technical breakdown, to avoid public getter bytecode for every content constant.
 - Static item/combat content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
-- Current compiled bytecode after adding onchain area travel: `IdleIsles` is 24,079 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 17-test Hardhat suite passes against the two-contract deployment shape.
+- Current compiled bytecode after tying Stop HP to auto-eat: `IdleIsles` is 24,092 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 19-test Hardhat suite passes against the two-contract deployment shape.
 - `npm run bytecode:contracts` enforces a 24,200-byte project budget for `IdleIsles`, below the 24,576-byte EIP-170 deployed bytecode limit.
 - Core area, item, and activity IDs are now recorded in `content/core/ids.json` and checked by `npm run content:check`. The registry generates frontend chain mappings in `src/generated/contentIds.ts`, but it is not yet the full gameplay or Solidity source of truth.
 - Auto-settle session preferences exist through `configureAutoSettle`.
 - Authorized operators can call `settleFor`.
-- Session safety can stop combat at a configured HP threshold.
-- Session safety can auto-eat configured cooked food before continuing combat.
+- Session safety can auto-eat configured cooked food before continuing combat; the HP stop threshold is active only while auto-eat is enabled.
 - The frontend local simulation now mirrors this UX with persisted combat safety settings: auto-eat, selected food, stop-at HP, and max food per claim.
 - Optimized Hardhat builds use Solidity 0.8.28 with 1 optimizer run so the current core/content contract pair deploys under the EVM bytecode size limit. Bytecode budget is tight, so new activity slices currently use direct compact branches rather than a broad generic content table.
 - Hardhat 3 + viem tests now cover level thresholds, profile creation, basic combat settlement, auto-settle HP safety stops, marketplace escrow/fill, and marketplace cancellation.
