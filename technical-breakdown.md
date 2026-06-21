@@ -387,11 +387,11 @@ Current combat activities:
 
 | Activity | Requirements | Equipment | Cycle | XP | Base Rewards |
 | --- | --- | --- | ---: | --- | --- |
-| Training Yard | Attack 1 | none | 7s | 15 Atk, 8 Def, 8 HP | 1 Tanned Hide, 4 Crowns |
-| Field Rat | Attack 4, HP 3 | none | 8.5s | 22 Atk, 10 Def, 13 HP | 1 Tanned Hide, 7 Crowns, 1 Raw Minnow |
-| Moss Camp | Attack 8, Def 7, HP 7 | Copper Dagger | 11s | 35 Atk, 22 Def, 20 HP | 1 Thick Hide, 16 Crowns, 1 Rune Dust |
-| Goblin Forager | Attack 10, Def 8, HP 10 | none | 10s | 42 Atk, 28 Def, 25 HP | 1 Thick Hide, 12 Crowns |
-| Giant Spider | Attack 20, Def 18, HP 18 | Iron Sword | 12s | 60 Atk, 35 Def, 35 HP | 1 Rugged Hide, 24 Crowns |
+| Training Yard | Attack 1 | none | 7s | 15 Atk, 8 Def, 8 HP | 1 Tanned Hide, 2 Crowns |
+| Field Rat | Attack 4, HP 3 | none | 8.5s | 22 Atk, 10 Def, 13 HP | 1 Tanned Hide, 4 Crowns, 1 Raw Minnow |
+| Moss Camp | Attack 8, Def 7, HP 7 | Copper Dagger | 11s | 35 Atk, 22 Def, 20 HP | 1 Thick Hide, 8 Crowns, 1 Rune Dust |
+| Goblin Forager | Attack 10, Def 8, HP 10 | none | 10s | 42 Atk, 28 Def, 25 HP | 1 Thick Hide, 6 Crowns |
+| Giant Spider | Attack 20, Def 18, HP 18 | Iron Sword | 12s | 60 Atk, 35 Def, 35 HP | 1 Rugged Hide, 12 Crowns |
 | Dire Wolf | Attack 35, Def 30, HP 32 | Steel Longsword | 15s | 85 Atk, 55 Def, 60 HP | 1 Cobalt Scale, 45 Crowns |
 | Venomous Drake | Attack 55, Def 50, HP 55 | Tungsten Blade | 22s | 160 Atk, 105 Def, 110 HP | 1 Wyrm Hide, 90 Crowns |
 | Cave Bat | Attack 16, Def 14, HP 14 | Iron Sword | 12.5s | 52 Atk, 28 Def, 30 HP | 2 Tanned Hide, 22 Crowns |
