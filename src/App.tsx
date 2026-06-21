@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Axe,
   CircleDollarSign,
@@ -202,6 +202,20 @@ const SKILL_NAMES = Object.fromEntries(
 ) as Record<SkillId, string>
 const BOOT_TIME = Date.now()
 type PlayMode = 'local' | 'chain'
+const AFK_NOTIFICATION_MS = 5 * 60 * 1000
+const LAST_SEEN_STORAGE_KEY = 'idle-isles-last-seen-at'
+
+interface WelcomeBackReport {
+  activityName: string
+  awayMs: number
+  capped: boolean
+  lines: WelcomeBackLine[]
+}
+
+interface WelcomeBackLine {
+  tone: 'good' | 'warn' | 'danger' | 'neutral'
+  text: string
+}
 
 function readSave(): GameState {
   try {
@@ -214,10 +228,30 @@ function readSave(): GameState {
   }
 }
 
+function readLastSeen(): number | null {
+  try {
+    const value = Number(window.localStorage.getItem(LAST_SEEN_STORAGE_KEY))
+    return Number.isFinite(value) && value > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeLastSeen(value = Date.now()) {
+  try {
+    window.localStorage.setItem(LAST_SEEN_STORAGE_KEY, String(value))
+  } catch {
+    // Ignore storage failures; offline rewards still work in memory.
+  }
+}
+
 function App() {
   const [game, setGame] = useState<GameState>(readSave)
+  const gameRef = useRef(game)
   const [now, setNow] = useState(BOOT_TIME)
   const [playMode, setPlayMode] = useState<PlayMode>('local')
+  const [welcomeBackReport, setWelcomeBackReport] = useState<WelcomeBackReport | null>(null)
+  const hiddenAtRef = useRef<number | null>(null)
   const [selectedGroup, setSelectedGroup] = useState<ActivitySubtabGroup>('Gather')
   const [selectedActivitySkill, setSelectedActivitySkill] = useState<
     Record<ActivitySubtabGroup, SkillId>
@@ -320,8 +354,107 @@ function App() {
   })
 
   useEffect(() => {
+    gameRef.current = game
+  }, [game])
+
+  useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
   }, [game])
+
+  const resolveWelcomeBack = useCallback(
+    (awayMs: number, returnedAt = Date.now()) => {
+      if (awayMs < AFK_NOTIFICATION_MS) {
+        return
+      }
+
+      if (isChainMode) {
+        const report = createChainWelcomeBackReport(chainSnapshot, returnedAt, awayMs)
+        if (report) {
+          setWelcomeBackReport(report)
+        }
+        return
+      }
+
+      const current = gameRef.current
+      if (!current.active) {
+        return
+      }
+
+      const result = applyClaim(current, returnedAt)
+      const report = createWelcomeBackReport(current, result.state, result.preview, awayMs)
+      if (!report) {
+        return
+      }
+
+      const summary = summarizePreview(result.preview) || 'No completed cycles were ready'
+      const nextState = {
+        ...result.state,
+        log: [`Welcome back: ${summary}.`, ...result.state.log].slice(0, 8),
+      }
+      gameRef.current = nextState
+      setGame(nextState)
+      setWelcomeBackReport(report)
+    },
+    [chainSnapshot, isChainMode],
+  )
+
+  useEffect(() => {
+    const bootCheck = window.setTimeout(() => {
+      const savedLastSeen = readLastSeen()
+      if (savedLastSeen) {
+        resolveWelcomeBack(BOOT_TIME - savedLastSeen, BOOT_TIME)
+      }
+    }, 0)
+    writeLastSeen(BOOT_TIME)
+
+    const markAway = () => {
+      if (hiddenAtRef.current === null) {
+        hiddenAtRef.current = Date.now()
+      }
+      writeLastSeen(hiddenAtRef.current)
+    }
+
+    const markReturn = () => {
+      const returnedAt = Date.now()
+      const awayStartedAt = hiddenAtRef.current ?? readLastSeen()
+      hiddenAtRef.current = null
+
+      if (awayStartedAt) {
+        resolveWelcomeBack(returnedAt - awayStartedAt, returnedAt)
+      }
+      writeLastSeen(returnedAt)
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        markAway()
+      } else {
+        markReturn()
+      }
+    }
+
+    const heartbeat = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        writeLastSeen()
+      }
+    }, 30_000)
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('blur', markAway)
+    window.addEventListener('focus', markReturn)
+    window.addEventListener('pagehide', markAway)
+    window.addEventListener('beforeunload', markAway)
+
+    return () => {
+      window.clearTimeout(bootCheck)
+      window.clearInterval(heartbeat)
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('blur', markAway)
+      window.removeEventListener('focus', markReturn)
+      window.removeEventListener('pagehide', markAway)
+      window.removeEventListener('beforeunload', markAway)
+    }
+  }, [resolveWelcomeBack])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -1572,8 +1705,249 @@ function App() {
           </div>
         </div>
       </section>
+
+      {welcomeBackReport && (
+        <WelcomeBackModal
+          report={welcomeBackReport}
+          onClose={() => setWelcomeBackReport(null)}
+        />
+      )}
     </main>
   )
+}
+
+function WelcomeBackModal({
+  report,
+  onClose,
+}: {
+  report: WelcomeBackReport
+  onClose: () => void
+}) {
+  return (
+    <div className="welcome-back-backdrop">
+      <section
+        aria-labelledby="welcome-back-title"
+        aria-modal="true"
+        className="welcome-back-modal"
+        role="dialog"
+      >
+        <div className="welcome-back-icon">
+          <Swords size={42} />
+        </div>
+        <h2 id="welcome-back-title">Welcome Back!</h2>
+        <p>
+          You were gone for roughly <strong>{formatLongDuration(report.awayMs)}</strong>.
+        </p>
+        <span className="welcome-back-cap">
+          {formatLongDuration(AFK_CAP_MS)} is the maximum offline progression
+          {report.capped ? ' and your rewards hit that cap' : ''}
+        </span>
+
+        <div className="welcome-back-summary">
+          <span>While you were gone:</span>
+          <strong>{report.activityName}</strong>
+        </div>
+
+        <div className="welcome-back-lines">
+          {report.lines.map((line, index) => (
+            <div className={`welcome-back-line tone-${line.tone}`} key={`${line.text}-${index}`}>
+              {line.text}
+            </div>
+          ))}
+        </div>
+
+        <button type="button" onClick={onClose} autoFocus>
+          OK
+        </button>
+      </section>
+    </div>
+  )
+}
+
+function createWelcomeBackReport(
+  before: GameState,
+  after: GameState,
+  preview: ClaimPreview,
+  awayMs: number,
+): WelcomeBackReport | null {
+  const activity = before.active ? ACTIVITY_BY_ID[before.active.id] : null
+  if (!activity) {
+    return null
+  }
+
+  const lines: WelcomeBackLine[] = []
+
+  if (preview.cycles > 0) {
+    lines.push({
+      tone: 'neutral',
+      text: `You completed ${formatCount(preview.cycles)} ${formatCycleLabel(preview.cycles)} at ${activity.name}`,
+    })
+  }
+
+  for (const skill of SKILLS) {
+    const gainedXp = preview.xp[skill.id] ?? 0
+    if (gainedXp > 0) {
+      lines.push({
+        tone: 'good',
+        text: `You gained ${formatCount(gainedXp)} ${skill.name} XP`,
+      })
+    }
+
+    const beforeLevel = levelFromXp(before.skills[skill.id].xp)
+    const afterLevel = levelFromXp(after.skills[skill.id].xp)
+    if (afterLevel > beforeLevel) {
+      lines.push({
+        tone: 'good',
+        text: `You leveled up ${skill.name} (${beforeLevel}->${afterLevel})`,
+      })
+    }
+  }
+
+  for (const [itemId, amount] of Object.entries(preview.rewards)) {
+    const regularAmount = amount - (preview.rareDrops[itemId as ItemId] ?? 0)
+    if (regularAmount > 0) {
+      lines.push({
+        tone: itemId === 'crowns' ? 'good' : 'neutral',
+        text: `You gained ${formatCount(regularAmount)} ${ITEMS[itemId as ItemId].name}`,
+      })
+    }
+  }
+
+  for (const [itemId, amount] of Object.entries(preview.rareDrops)) {
+    if (amount > 0) {
+      lines.push({
+        tone: 'good',
+        text: `You found ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
+      })
+    }
+  }
+
+  for (const [itemId, amount] of Object.entries(preview.costs)) {
+    if (amount > 0) {
+      lines.push({
+        tone: 'warn',
+        text: `You used ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
+      })
+    }
+  }
+
+  for (const [itemId, amount] of Object.entries(preview.burned)) {
+    if (amount > 0) {
+      lines.push({
+        tone: 'warn',
+        text: `${formatCount(amount)} ${ITEMS[itemId as ItemId].name} burned`,
+      })
+    }
+  }
+
+  for (const [itemId, amount] of Object.entries(preview.autoEaten)) {
+    if (amount > 0) {
+      lines.push({
+        tone: 'good',
+        text: `Auto-ate ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
+      })
+    }
+  }
+
+  if (preview.hpRestored > 0) {
+    lines.push({ tone: 'good', text: `You restored ${formatCount(preview.hpRestored)} HP` })
+  }
+
+  if (preview.hpLost > 0) {
+    lines.push({ tone: 'warn', text: `You lost ${formatCount(preview.hpLost)} HP` })
+  }
+
+  if (preview.deathPenalty.lostCrowns > 0) {
+    lines.push({
+      tone: 'danger',
+      text: `You lost ${formatCount(preview.deathPenalty.lostCrowns)} Crowns`,
+    })
+  }
+
+  for (const itemId of preview.deathPenalty.lostEquipment) {
+    lines.push({ tone: 'danger', text: `You lost equipped ${ITEMS[itemId].name}` })
+  }
+
+  if (preview.stoppedByHp) {
+    lines.push({ tone: 'danger', text: 'Combat stopped because your HP hit 0' })
+  } else if (preview.stoppedBySafety) {
+    lines.push({ tone: 'warn', text: 'Combat stopped at your auto-eat safety threshold' })
+  }
+
+  if (lines.length === 0) {
+    lines.push({ tone: 'neutral', text: 'No completed cycles were ready' })
+  }
+
+  return {
+    activityName: activity.name,
+    awayMs,
+    capped: preview.elapsedMs >= AFK_CAP_MS,
+    lines,
+  }
+}
+
+function createChainWelcomeBackReport(
+  snapshot: ChainSnapshot | null,
+  returnedAt: number,
+  awayMs: number,
+): WelcomeBackReport | null {
+  const activity = snapshot?.active ? ACTIVITY_BY_ID[snapshot.active.id] : null
+  if (!snapshot?.active || !activity) {
+    return null
+  }
+
+  const totalReadyCycles = getChainReadyCycles(snapshot, activity, returnedAt)
+  if (totalReadyCycles <= 0) {
+    return null
+  }
+
+  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
+  const lines: WelcomeBackLine[] = [
+    {
+      tone: 'neutral',
+      text: `${formatCount(totalReadyCycles)} onchain ${formatCycleLabel(totalReadyCycles)} ready`,
+    },
+    {
+      tone: totalReadyCycles > claimableCycles ? 'warn' : 'neutral',
+      text:
+        totalReadyCycles > claimableCycles
+          ? `Next claim will settle ${formatCount(claimableCycles)} cycles`
+          : 'Press Claim to settle these cycles onchain',
+    },
+    {
+      tone: 'warn',
+      text: 'Rewards mint after the Claim transaction confirms',
+    },
+  ]
+
+  return {
+    activityName: activity.name,
+    awayMs,
+    capped: getChainElapsedMs(snapshot, activity, returnedAt) >= AFK_CAP_MS,
+    lines,
+  }
+}
+
+function formatCycleLabel(count: number) {
+  return count === 1 ? 'cycle' : 'cycles'
+}
+
+function formatCount(value: number) {
+  return Math.floor(value).toLocaleString()
+}
+
+function formatLongDuration(ms: number) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  const parts = [
+    hours > 0 ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : '',
+    minutes > 0 || hours > 0 ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : '',
+    `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`,
+  ].filter(Boolean)
+
+  return parts.join(', ')
 }
 
 function ItemDetail({ itemId }: { itemId: ItemId }) {

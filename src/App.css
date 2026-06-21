@@ -2431,6 +2431,127 @@ h2 {
   padding: 8px 9px;
 }
 
+.welcome-back-backdrop {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(7, 10, 10, 0.68);
+  padding: 18px;
+  z-index: 80;
+}
+
+.welcome-back-modal {
+  display: grid;
+  justify-items: center;
+  width: min(430px, 100%);
+  max-height: min(720px, calc(100svh - 36px));
+  overflow: auto;
+  border: 1px solid rgba(246, 237, 213, 0.14);
+  border-radius: 8px;
+  background: #29333f;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42);
+  color: #f4f0e8;
+  padding: 22px 22px 18px;
+  text-align: center;
+}
+
+.welcome-back-icon {
+  display: grid;
+  place-items: center;
+  width: 62px;
+  height: 62px;
+  color: #f4f0e8;
+}
+
+.welcome-back-modal h2 {
+  margin: 4px 0 8px;
+  color: #ffffff;
+  font-size: 1.35rem;
+  line-height: 1.15;
+}
+
+.welcome-back-modal p {
+  max-width: 32ch;
+  margin: 0;
+  color: #e2e7ea;
+  font-size: 0.92rem;
+  line-height: 1.35;
+}
+
+.welcome-back-cap {
+  margin-top: 6px;
+  color: #69b9da;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.welcome-back-summary {
+  display: grid;
+  gap: 3px;
+  margin-top: 18px;
+  color: #e2e7ea;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.welcome-back-summary strong {
+  color: #ffffff;
+  font-size: 0.94rem;
+}
+
+.welcome-back-lines {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.welcome-back-line {
+  color: #edf2f4;
+  font-size: 0.88rem;
+  font-weight: 900;
+  line-height: 1.22;
+}
+
+.welcome-back-line.tone-good {
+  color: #35d39a;
+}
+
+.welcome-back-line.tone-warn {
+  color: #f1c35a;
+}
+
+.welcome-back-line.tone-danger {
+  color: #ff746b;
+}
+
+.welcome-back-line.tone-neutral {
+  color: #edf2f4;
+}
+
+.welcome-back-modal button {
+  min-width: 58px;
+  min-height: 38px;
+  margin-top: 20px;
+  cursor: pointer;
+  color: #fff7e2;
+  border: 1px solid rgba(246, 237, 213, 0.18);
+  border-radius: 7px;
+  background: #536ec7;
+  font-weight: 900;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.welcome-back-modal button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(246, 237, 213, 0.46);
+  background: #607dde;
+}
+
 @keyframes idle-bob {
   0%,
   100% {
