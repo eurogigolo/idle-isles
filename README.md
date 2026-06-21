@@ -19,8 +19,8 @@ Run the full local gate before merging or deploying:
 npm run verify
 ```
 
-This runs linting, dependency audit, Solidity build, contract tests, and the production frontend
-build in order.
+This runs linting, dependency audit, content ID validation, Solidity build, bytecode budget checks,
+contract tests, and the production frontend build in order.
 
 ## Contract Mode
 

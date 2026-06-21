@@ -15,8 +15,11 @@ Primary files:
 - `contracts/IdleIsles.sol`: current Solidity alpha foundation for profile creation, combat settlement, equipment, food, marketplace orders, death penalty, and session settlement.
 - `contracts/IdleIslesContent.sol`: immutable static content contract for item slots, item stats, food healing, combat activity definitions, and combat drop tables.
 - `contracts/IIdleIslesContent.sol`: interface shared by the core contract and the deployed content contract.
+- `content/core/ids.json`: checked core namespace and numeric ID registry for areas, items, and activities. This is migration scaffolding before content generation becomes the source of truth.
 - `hardhat.config.ts`: Hardhat 3 configuration for contract builds/tests using the viem, network helper, and Node test-runner plugins, Solidity 0.8.28, and 1 optimizer run on both default and production profiles. The contract pragma remains `^0.8.24`, but OpenZeppelin 5.6.1 requires a compiler new enough for the `mcopy` builtin. Optimized default builds are required because bytecode size is a hard constraint for the stateful core contract. The optimizer is biased toward smaller deployed bytecode because gameplay content is currently the limiting factor.
 - `scripts/deploy.ts`: Hardhat 3 + viem deployment script for the `IdleIslesContent` and `IdleIsles` contract pair. It writes deployment addresses to `deployments/<network>.json`.
+- `scripts/check-bytecode-size.mjs`: deployed bytecode budget gate. `IdleIsles` currently has a 24,200-byte project budget below the 24,576-byte EIP-170 hard limit.
+- `scripts/check-content-ids.mjs`: validates the core ID registry for namespace format, uniqueness, and basic references.
 - `test/IdleIsles.ts`: Node test runner + viem contract tests for level thresholds, profile creation, and training combat settlement.
 - `plan.md`: playable alpha roadmap.
 - `solidity-notes.md`: contract parity checklist and onchain implementation notes.

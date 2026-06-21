@@ -33,6 +33,8 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 - Item and activity constants are internal, with numeric IDs documented in this file and the technical breakdown, to avoid public getter bytecode for every content constant.
 - Static item/combat content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
 - Current compiled bytecode after adding onchain area travel: `IdleIsles` is 24,079 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 17-test Hardhat suite passes against the two-contract deployment shape.
+- `npm run bytecode:contracts` enforces a 24,200-byte project budget for `IdleIsles`, below the 24,576-byte EIP-170 deployed bytecode limit.
+- Core area, item, and activity IDs are now recorded in `content/core/ids.json` and checked by `npm run content:check`. This is a registry seed, not full source-of-truth generation yet.
 - Auto-settle session preferences exist through `configureAutoSettle`.
 - Authorized operators can call `settleFor`.
 - Session safety can stop combat at a configured HP threshold.
