@@ -947,21 +947,21 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
         if (activity.activityId == ACTIVITY_TRAINING_YARD) {
             _mint(player, HIDE, 1, "");
-            _mint(player, CROWNS, 4, "");
+            _mint(player, CROWNS, 2, "");
         } else if (activity.activityId == ACTIVITY_FIELD_RAT) {
             _mint(player, HIDE, 1, "");
-            _mint(player, CROWNS, 7, "");
+            _mint(player, CROWNS, 4, "");
             _mint(player, RAW_MINNOW, 1, "");
         } else if (activity.activityId == ACTIVITY_MOSS_CAMP) {
             _mint(player, THICK_HIDE, 1, "");
-            _mint(player, CROWNS, 16, "");
+            _mint(player, CROWNS, 8, "");
             _mint(player, RUNE_DUST, 1, "");
         } else if (activity.activityId == ACTIVITY_GOBLIN_FORAGER) {
             _mint(player, THICK_HIDE, 1, "");
-            _mint(player, CROWNS, 12, "");
+            _mint(player, CROWNS, 6, "");
         } else if (activity.activityId == ACTIVITY_GIANT_SPIDER) {
             _mint(player, RUGGED_HIDE, 1, "");
-            _mint(player, CROWNS, 24, "");
+            _mint(player, CROWNS, 12, "");
         } else if (activity.activityId == ACTIVITY_DIRE_WOLF) {
             _mint(player, COBALT_SCALE, 1, "");
             _mint(player, CROWNS, 45, "");

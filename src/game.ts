@@ -1227,7 +1227,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     levelReqs: { attack: 1 },
     cycleMs: 7000,
     xp: { attack: 15, defence: 8, hitpoints: 8 },
-    rewards: { tannedHide: 1, crowns: 4 },
+    rewards: { tannedHide: 1, crowns: 2 },
     combat: { damageChance: 24, minDamage: 1, maxDamage: 2 },
   },
   {
@@ -1240,7 +1240,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     levelReqs: { attack: 4, hitpoints: 3 },
     cycleMs: 8500,
     xp: { attack: 22, defence: 10, hitpoints: 13 },
-    rewards: { tannedHide: 1, crowns: 7, rawMinnow: 1 },
+    rewards: { tannedHide: 1, crowns: 4, rawMinnow: 1 },
     combat: { damageChance: 34, minDamage: 1, maxDamage: 3 },
   },
   {
@@ -1254,7 +1254,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     requiredEquipment: 'copperDagger',
     cycleMs: 11000,
     xp: { attack: 35, defence: 22, hitpoints: 20 },
-    rewards: { thickHide: 1, crowns: 16, runeDust: 1 },
+    rewards: { thickHide: 1, crowns: 8, runeDust: 1 },
     combat: { damageChance: 46, minDamage: 2, maxDamage: 5 },
   },
   {
@@ -1267,7 +1267,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     levelReqs: { attack: 10, defence: 8, hitpoints: 10 },
     cycleMs: 10000,
     xp: { attack: 42, defence: 28, hitpoints: 25 },
-    rewards: { thickHide: 1, crowns: 12 },
+    rewards: { thickHide: 1, crowns: 6 },
     combat: {
       damageChance: 40,
       minDamage: 2,
@@ -1289,7 +1289,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     requiredEquipment: 'ironSword',
     cycleMs: 12000,
     xp: { attack: 60, defence: 35, hitpoints: 35 },
-    rewards: { ruggedHide: 1, crowns: 24 },
+    rewards: { ruggedHide: 1, crowns: 12 },
     combat: {
       damageChance: 48,
       minDamage: 3,

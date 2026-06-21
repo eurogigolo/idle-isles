@@ -139,7 +139,7 @@ describe("IdleIsles", async function () {
     await game.write.claim();
 
     assert.equal(await game.read.balanceOf([player.account.address, 70n]), 1n);
-    assert.equal(await game.read.balanceOf([player.account.address, 1n]), 84n);
+    assert.equal(await game.read.balanceOf([player.account.address, 1n]), 82n);
     assert.equal(await game.read.skillXp([player.account.address, 0]), 30n);
     assert.equal(await game.read.skillXp([player.account.address, 1]), 16n);
     assert.equal(await game.read.skillXp([player.account.address, 2]), 16n);
@@ -200,7 +200,7 @@ describe("IdleIsles", async function () {
     assert.equal(filledOrder[3], 0n);
     assert.equal(await game.read.balanceOf([buyer.account.address, HIDE]), 1n);
     assert.equal(await game.read.balanceOf([buyer.account.address, CROWNS]), 70n);
-    assert.equal(await game.read.balanceOf([seller.account.address, CROWNS]), 94n);
+    assert.equal(await game.read.balanceOf([seller.account.address, CROWNS]), 92n);
     assert.equal(await game.read.balanceOf([game.address, HIDE]), 0n);
   });
 
@@ -455,7 +455,7 @@ describe("IdleIsles", async function () {
     }
 
     const successfulCycles = await game.read.balanceOf([player.account.address, HIDE]);
-    const preDeathCrowns = 80n + successfulCycles * 4n;
+    const preDeathCrowns = 80n + successfulCycles * 2n;
     const expectedCrownsAfterDeath = preDeathCrowns - preDeathCrowns / 2n;
 
     assert.equal(await game.read.currentHitpoints([player.account.address]), 0);
