@@ -250,6 +250,8 @@ function App() {
   const activityListLabel = selectedActivitySubtab
     ? SKILL_NAMES[selectedActivitySubtab]
     : selectedGroup
+  const chainProfileLock =
+    isChainMode && !chainSnapshot?.hasProfile ? 'Create profile first' : null
   const localPreview = useMemo(() => getClaimPreview(game, now), [game, now])
   const preview = useMemo(
     () =>
@@ -428,6 +430,7 @@ function App() {
   async function runChainTransaction(
     action: (provider: BrowserEthereumProvider, account: Address) => Promise<unknown>,
     successMessage: string,
+    options: { requiresProfile?: boolean } = {},
   ) {
     if (!window.ethereum) {
       setWalletNote('No injected wallet')
@@ -446,6 +449,13 @@ function App() {
 
     if (chainId !== MEGAETH_CHAIN_ID_HEX) {
       setWalletNote('Switch wallet to MegaETH')
+      return
+    }
+
+    if ((options.requiresProfile ?? true) && !chainSnapshot?.hasProfile) {
+      const message = 'Create onchain profile first.'
+      setWalletNote(message)
+      pushChainLog(message)
       return
     }
 
@@ -501,7 +511,9 @@ function App() {
   }, [isChainMode])
 
   async function createChainProfile() {
-    await runChainTransaction(writeCreateProfile, 'Profile created onchain.')
+    await runChainTransaction(writeCreateProfile, 'Profile created onchain.', {
+      requiresProfile: false,
+    })
   }
 
   async function claim() {
@@ -537,6 +549,13 @@ function App() {
   async function startActivity(activityId: ActivityId) {
     if (isChainMode) {
       const activity = ACTIVITY_BY_ID[activityId]
+
+      if (!chainSnapshot?.hasProfile) {
+        const message = 'Create onchain profile first.'
+        setWalletNote(message)
+        pushChainLog(message)
+        return
+      }
 
       if (!getContractActivity(activityId)) {
         pushChainLog(`${activity.name} is local-only until more contract content is ported.`)
@@ -1056,7 +1075,12 @@ function App() {
                   </div>
                 )}
               </div>
-              <button type="button" className="claim-button" onClick={claim}>
+              <button
+                type="button"
+                className="claim-button"
+                onClick={claim}
+                disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+              >
                 <CircleDollarSign size={18} />
                 <span>Claim</span>
               </button>
@@ -1074,7 +1098,8 @@ function App() {
                     game={displayGame}
                     isActive={displayGame.active?.id === activity.id}
                     modeLock={
-                      isChainMode && !getContractActivity(activity.id) ? 'Local only' : null
+                      chainProfileLock ??
+                      (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
                     }
                     key={activity.id}
                     onStart={() => startActivity(activity.id)}
@@ -1109,7 +1134,9 @@ function App() {
                     }`}
                     key={area.id}
                     onClick={() => void sailToArea(area.id)}
-                    disabled={selected || chainBusy}
+                    disabled={
+                      selected || chainBusy || (isChainMode && !chainSnapshot?.hasProfile)
+                    }
                     title={
                       unlocked
                         ? area.routeLabel
