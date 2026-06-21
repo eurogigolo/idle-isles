@@ -71,6 +71,7 @@ import {
   travelToArea,
 } from './game'
 import {
+  CHAIN_SETTLE_CYCLE_LIMIT,
   MEGAETH_CHAIN_ID_HEX,
   MEGAETH_TESTNET_PARAMS,
   type BrowserEthereumProvider,
@@ -260,6 +261,8 @@ function App() {
         : localPreview,
     [activeActivity, chainSnapshot, isChainMode, localPreview],
   )
+  const totalReadyCycles =
+    isChainMode && chainSnapshot ? chainSnapshot.pendingCycles : preview.cycles
   const visibleActivities = ACTIVITIES.filter(
     (activity) =>
       getActivityAreaId(activity) === displayGame.currentAreaId &&
@@ -1029,7 +1032,11 @@ function App() {
               </div>
               <div className="cycle-meter">
                 <Clock size={15} />
-                <span>{activeActivity ? `${preview.cycles} ready` : 'No task'}</span>
+                <span>
+                  {activeActivity
+                    ? formatReadyCycles(preview.cycles, totalReadyCycles)
+                    : 'No task'}
+                </span>
               </div>
             </div>
           </div>
@@ -1701,11 +1708,12 @@ function getChainPreview(
   activity: ActivityDefinition | null,
 ): ClaimPreview {
   const cycleMs = activity?.cycleMs ?? 0
+  const claimableCycles = Math.min(snapshot.pendingCycles, CHAIN_SETTLE_CYCLE_LIMIT)
 
   return {
-    cycles: snapshot.pendingCycles,
+    cycles: claimableCycles,
     progressPct: 0,
-    elapsedMs: snapshot.pendingCycles * cycleMs,
+    elapsedMs: claimableCycles * cycleMs,
     cycleMs,
     xp: {},
     rewards: {},
@@ -1722,6 +1730,12 @@ function getChainPreview(
       lostEquipment: [],
     },
   }
+}
+
+function formatReadyCycles(claimableCycles: number, totalReadyCycles: number) {
+  return totalReadyCycles > claimableCycles
+    ? `${claimableCycles}/${totalReadyCycles} ready`
+    : `${claimableCycles} ready`
 }
 
 function getChainStatus({
