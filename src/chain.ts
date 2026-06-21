@@ -55,6 +55,8 @@ export interface ChainSnapshot {
 
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 const CHAIN_MARKET_SCAN_LIMIT = 120
+const GAS_BUFFER_BPS = 5_000n
+const MIN_GAS_BUFFER = 100_000n
 
 export const MEGAETH_TESTNET_PARAMS = {
   chainId: MEGAETH_CHAIN_ID_HEX,
@@ -115,6 +117,20 @@ const idleIslesAbi = parseAbi([
   'function travelToArea(uint8 areaId)',
   'function unequip(uint8 slot)',
 ])
+
+type IdleIslesWriteRequest =
+  | { functionName: 'buy'; args: readonly [orderId: bigint, amount: bigint] }
+  | { functionName: 'cancelOrder'; args: readonly [orderId: bigint] }
+  | { functionName: 'claim'; args: readonly [] }
+  | { functionName: 'createOrder'; args: readonly [itemId: bigint, amount: bigint, priceEach: bigint] }
+  | { functionName: 'createProfile'; args: readonly [] }
+  | { functionName: 'eatFood'; args: readonly [itemId: bigint] }
+  | { functionName: 'equip'; args: readonly [itemId: bigint] }
+  | { functionName: 'startArtisan'; args: readonly [activityId: number] }
+  | { functionName: 'startCombat'; args: readonly [activityId: number] }
+  | { functionName: 'startGather'; args: readonly [activityId: number] }
+  | { functionName: 'travelToArea'; args: readonly [areaId: number] }
+  | { functionName: 'unequip'; args: readonly [slot: number] }
 
 const publicClient = createPublicClient({
   chain: megaethTestnet,
@@ -275,27 +291,11 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
 }
 
 export async function writeCreateProfile(provider: BrowserEthereumProvider, account: Address) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
-    functionName: 'createProfile',
-  })
-
-  await waitForTransaction(hash)
-  return hash
+  return writeIdleIslesContract(provider, account, { functionName: 'createProfile', args: [] })
 }
 
 export async function writeClaim(provider: BrowserEthereumProvider, account: Address) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
-    functionName: 'claim',
-  })
-
-  await waitForTransaction(hash)
-  return hash
+  return writeIdleIslesContract(provider, account, { functionName: 'claim', args: [] })
 }
 
 export async function writeStartActivity(
@@ -309,41 +309,23 @@ export async function writeStartActivity(
   }
 
   if (activity.kind === 'combat') {
-    const walletClient = createIdleWalletClient(provider, account)
-    const hash = await walletClient.writeContract({
-      address: requireIdleIslesAddress(),
-      abi: idleIslesAbi,
+    return writeIdleIslesContract(provider, account, {
       functionName: 'startCombat',
       args: [activity.id],
     })
-
-    await waitForTransaction(hash)
-    return hash
   }
 
   if (activity.kind === 'gather') {
-    const walletClient = createIdleWalletClient(provider, account)
-    const hash = await walletClient.writeContract({
-      address: requireIdleIslesAddress(),
-      abi: idleIslesAbi,
+    return writeIdleIslesContract(provider, account, {
       functionName: 'startGather',
       args: [activity.id],
     })
-
-    await waitForTransaction(hash)
-    return hash
   }
 
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'startArtisan',
     args: [activity.id],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeEquip(
@@ -351,16 +333,10 @@ export async function writeEquip(
   account: Address,
   itemId: ItemId,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'equip',
     args: [getContractItemId(itemId)],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeUnequip(
@@ -368,16 +344,10 @@ export async function writeUnequip(
   account: Address,
   slotIndex: number,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'unequip',
     args: [slotIndex],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeEatFood(
@@ -385,16 +355,10 @@ export async function writeEatFood(
   account: Address,
   itemId: ItemId,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'eatFood',
     args: [getContractItemId(itemId)],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeTravelToArea(
@@ -402,16 +366,10 @@ export async function writeTravelToArea(
   account: Address,
   areaId: AreaId,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'travelToArea',
     args: [CONTRACT_AREA_IDS[areaId]],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeCreateOrder(
@@ -421,16 +379,10 @@ export async function writeCreateOrder(
   amount: number,
   priceEach: number,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'createOrder',
     args: [getContractItemId(itemId), BigInt(amount), BigInt(priceEach)],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeBuyOrder(
@@ -439,16 +391,10 @@ export async function writeBuyOrder(
   orderId: bigint,
   amount = 1,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'buy',
     args: [orderId, BigInt(amount)],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export async function writeCancelOrder(
@@ -456,16 +402,10 @@ export async function writeCancelOrder(
   account: Address,
   orderId: bigint,
 ) {
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address: requireIdleIslesAddress(),
-    abi: idleIslesAbi,
+  return writeIdleIslesContract(provider, account, {
     functionName: 'cancelOrder',
     args: [orderId],
   })
-
-  await waitForTransaction(hash)
-  return hash
 }
 
 export function getChainOrderId(orderId: string): bigint | null {
@@ -590,6 +530,35 @@ function formatChainOrder(
 
 function toSafeNumber(value: bigint): number {
   return Number(value > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : value)
+}
+
+async function writeIdleIslesContract(
+  provider: BrowserEthereumProvider,
+  account: Address,
+  request: IdleIslesWriteRequest,
+) {
+  const address = requireIdleIslesAddress()
+  const gasEstimate = await publicClient.estimateContractGas({
+    account,
+    address,
+    abi: idleIslesAbi,
+    ...request,
+  })
+  const gas = withGasBuffer(gasEstimate)
+  const walletClient = createIdleWalletClient(provider, account)
+  const hash = await walletClient.writeContract({
+    address,
+    abi: idleIslesAbi,
+    ...request,
+    gas,
+  })
+
+  await waitForTransaction(hash)
+  return hash
+}
+
+function withGasBuffer(gasEstimate: bigint): bigint {
+  return gasEstimate + (gasEstimate * GAS_BUFFER_BPS) / 10_000n + MIN_GAS_BUFFER
 }
 
 function createIdleWalletClient(provider: BrowserEthereumProvider, account: Address) {
