@@ -54,6 +54,7 @@ export interface ChainSnapshot {
 }
 
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
+export const CHAIN_SETTLE_CYCLE_LIMIT = 200
 const CHAIN_MARKET_SCAN_LIMIT = 120
 const GAS_BUFFER_BPS = 5_000n
 const MIN_GAS_BUFFER = 100_000n

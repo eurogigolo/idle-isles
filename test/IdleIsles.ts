@@ -249,6 +249,34 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.skillXp([player.account.address, 6]), 32n);
   });
 
+  it("settles capped gather backlog without double-paying claimed cycles", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([ASH_GROVE]);
+    await networkHelpers.time.increase(1250);
+
+    assert.equal(await game.read.pendingCycles([player.account.address]), 250n);
+
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 400n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 7200n);
+    assert.equal(await game.read.pendingCycles([player.account.address]), 50n);
+
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 500n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 9000n);
+    assert.equal(await game.read.pendingCycles([player.account.address]), 0n);
+
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 500n);
+    assert.equal(await game.read.skillXp([player.account.address, 3]), 9000n);
+  });
+
   it("mines copper and tin and smelts Copper Bars", async function () {
     const [player] = await viem.getWalletClients();
     const game = await deployIdleIsles();
