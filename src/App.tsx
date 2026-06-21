@@ -88,6 +88,7 @@ import {
   writeEatFood,
   writeEquip,
   writeStartActivity,
+  writeTravelToArea,
   writeUnequip,
 } from './chain'
 import './App.css'
@@ -861,7 +862,16 @@ function App() {
 
   async function sailToArea(areaId: AreaId) {
     if (isChainMode) {
-      pushChainLog('Ship routes are local-only until contract area support is added.')
+      const area = AREA_BY_ID[areaId]
+      const unlocked = isAreaUnlocked(displayGame, areaId)
+      const message = unlocked
+        ? `Sailed to ${area.name} onchain.`
+        : `Paid ${area.shipCost.toLocaleString()} Crowns and sailed to ${area.name} onchain.`
+
+      await runChainTransaction(
+        (provider, activeAccount) => writeTravelToArea(provider, activeAccount, areaId),
+        message,
+      )
       return
     }
 
@@ -1085,13 +1095,11 @@ function App() {
                 const canAfford = displayGame.inventory.crowns >= area.shipCost
                 const routeLabel = selected
                   ? 'Current'
-                  : isChainMode
-                    ? 'Local only'
-                    : unlocked
-                      ? 'Sail'
-                      : canAfford
-                        ? `Pay ${area.shipCost.toLocaleString()}`
-                        : `Need ${area.shipCost.toLocaleString()}`
+                  : unlocked
+                    ? 'Sail'
+                    : canAfford
+                      ? `Pay ${area.shipCost.toLocaleString()}`
+                      : `Need ${area.shipCost.toLocaleString()}`
 
                 return (
                   <button
@@ -1101,7 +1109,7 @@ function App() {
                     }`}
                     key={area.id}
                     onClick={() => void sailToArea(area.id)}
-                    disabled={selected || isChainMode}
+                    disabled={selected || chainBusy}
                     title={
                       unlocked
                         ? area.routeLabel
@@ -1655,6 +1663,8 @@ function gameFromChainSnapshot(snapshot: ChainSnapshot, fallback: GameState): Ga
     equipment: snapshot.equipment,
     marketOrders: snapshot.marketOrders,
     currentHitpoints: snapshot.currentHitpoints,
+    currentAreaId: snapshot.currentAreaId,
+    unlockedAreaIds: snapshot.unlockedAreaIds,
     active: snapshot.active,
   }
 }

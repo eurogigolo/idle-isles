@@ -20,14 +20,16 @@ frontend build.
 - Generated dependencies, builds, Hardhat artifacts, cache, and `.env` files are ignored.
 - MIT license is declared at the repository and package level.
 - CI workflow runs the same ordered verification gate.
+- `main` branch protection requires the `verify` check and linear history.
 - Contribution and security reporting docs exist.
 - Production and development dependency audit currently reports zero vulnerabilities.
+- Chain mode has onchain Starter Area/Outer Isles travel and area gating.
 
 ## Not Production Ready Yet
 
 - Contracts are unaudited.
 - Chain mode does not cover all local gameplay systems.
-- Area unlocks and ship travel are local-only.
+- Many local Outer Isles activities still lack contract settlement parity.
 - Community content is not validated or generated from a shared source of truth.
 - Contract randomness is alpha-grade and not suitable for valuable rare drops.
 - Main economy content has no formal balance-report gate.
@@ -37,12 +39,11 @@ frontend build.
 ## Priority Path
 
 1. Keep `npm run verify` green on every change.
-2. Add CI branch protection when hosted remotely.
-3. Add contract tests for every supported Chain mode path.
-4. Bring area unlocks and ship travel into contract parity.
-5. Extract core content into structured data and generate TypeScript maps from it.
-6. Add schema validation and balance-report tooling for content.
-7. Generate frontend chain IDs, Solidity lookup data, and test fixtures from the same source.
-8. Replace alpha rare-drop randomness before promoting valuable drops.
-9. Add deployment metadata with content hashes and verification instructions.
-10. Commission external Solidity review before any mainnet or valuable public deployment.
+2. Add contract tests for every supported Chain mode path.
+3. Port remaining local activity settlement paths into contract parity.
+4. Extract core content into structured data and generate TypeScript maps from it.
+5. Add schema validation and balance-report tooling for content.
+6. Generate frontend chain IDs, Solidity lookup data, and test fixtures from the same source.
+7. Replace alpha rare-drop randomness before promoting valuable drops.
+8. Add deployment metadata with content hashes and verification instructions.
+9. Commission external Solidity review before any mainnet or valuable public deployment.

@@ -7,15 +7,15 @@ Idle Isles should be a game first: an idle fantasy RPG with satisfying progressi
 As of the latest implementation pass:
 
 - Local React simulation includes tiered gather/combat/artisan content, cooking, equipment, hitpoints, combat safety, local inventory, a local Hoard Hall, and area-based activity routing.
-- Players start in the Starter Area and can buy a 50,000 Crown ship ride from the Harbor Merchant to unlock Outer Isles content. Area travel is local-only until contract support is added.
+- Players start in the Starter Area and can buy a 50,000 Crown ship ride from the Harbor Merchant to unlock Outer Isles content. Chain mode now stores current/unlocked areas and burns Crowns for ship passage.
 - The project is branded as Idle Isles across app UI, package metadata, contracts, tests, docs, and metadata/storage slugs.
 - Contract architecture is split into `IdleIsles` for state/settlement and immutable `IdleIslesContent` for static item/combat lookups.
-- Onchain gameplay currently supports profile creation, combat settlement, equipment burn/remint, death penalties, marketplace list/buy/cancel, Ash Grove, Copper Ridge, Tin Hollow, River Bend, Wood Armory, Copper Smelter, Copper Dagger, and Cook Minnow.
+- Onchain gameplay currently supports profile creation, area travel, combat settlement, equipment burn/remint, death penalties, marketplace list/buy/cancel, Ash Grove, Copper Ridge, Tin Hollow, River Bend, Wood Armory, Copper Smelter, Copper Dagger, and Cook Minnow.
 - Starter food loop is onchain: Raw Minnow can be fished, Cook Minnow can burn or produce Cooked Minnow, raw fish cannot heal, Cooked Minnow heals, and combat auto-eat can consume gameplay-created food.
 - Verification commands currently pass: `npm.cmd run build:contracts`, `npm.cmd run test:contracts`, `npm.cmd run build`, and `npm.cmd run lint`.
-- Contract tests currently pass at 15 Node test-runner tests.
-- Deployed bytecode measures 23,222 bytes for `IdleIsles` and 4,014 bytes for `IdleIslesContent`.
-- Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS`, for profile reads, balances, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
+- Contract tests currently pass at 17 Node test-runner tests.
+- Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
+- Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS`, for profile reads, balances, area travel, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
 - MegaETH deployment config and `npm run deploy:megaeth` now deploy `IdleIslesContent` followed by `IdleIsles`, then write `deployments/megaeth-testnet.json` with the frontend contract address.
 
 Recommended next build step: wire auto-settle configuration into Chain mode or continue porting higher-tier contract content.

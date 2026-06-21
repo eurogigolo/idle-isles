@@ -13,6 +13,9 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     error RequirementLow();
     error EquipmentRequired();
     error BadActivity();
+    error BadArea();
+    error AreaLocked();
+    error AreaRequired();
     error MaterialLow();
     error AutoDisabled();
     error AutoExpired();
@@ -69,6 +72,13 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     uint16 internal constant ACTIVITY_COPPER_SMELTER = 302;
     uint16 internal constant ACTIVITY_COPPER_DAGGER = 303;
     uint16 internal constant ACTIVITY_COOK_MINNOW = 304;
+
+    uint8 internal constant AREA_STARTER = 1;
+    uint8 internal constant AREA_OUTER_ISLES = 2;
+    uint8 internal constant AREA_STARTER_MASK = 1;
+    uint8 internal constant AREA_OUTER_ISLES_MASK = 2;
+
+    uint256 internal constant OUTER_ISLES_PASSAGE_COST = 50_000;
 
     uint256 internal constant AFK_CAP = 8 hours;
     uint16 internal constant MAX_SETTLE_CYCLES = 200;
@@ -129,11 +139,13 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
     mapping(address => bool) public hasProfile;
     mapping(address => uint16) public currentHitpoints;
+    mapping(address => uint8) public currentAreaId;
     mapping(address => mapping(uint8 => uint64)) public skillXp;
     mapping(address => ActiveTask) public activeTask;
     mapping(address => Equipment) private equipment;
     mapping(address => AutoSettleConfig) public autoSettleConfig;
     mapping(uint256 => Order) public orders;
+    mapping(address => uint8) private unlockedAreaMask;
 
     IIdleIslesContent internal immutable CONTENT;
     uint256 public nextOrderId = 1;
@@ -163,6 +175,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     event FoodEaten(address indexed player, uint256 indexed itemId, uint256 hpRestored);
     event ItemEquipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
     event ItemUnequipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
+    event AreaTraveled(address indexed player, uint8 indexed areaId, uint256 cost);
     event AutoSettleConfigured(address indexed player, address indexed operator, uint64 expiresAt);
     event OrderCreated(
         uint256 indexed orderId,
@@ -205,6 +218,8 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
         hasProfile[msg.sender] = true;
         currentHitpoints[msg.sender] = uint16(maxHitpoints(msg.sender));
+        currentAreaId[msg.sender] = AREA_STARTER;
+        unlockedAreaMask[msg.sender] = AREA_STARTER_MASK;
         _mint(msg.sender, CROWNS, 80, "");
 
         emit ProfileCreated(msg.sender, maxHitpoints(msg.sender));
@@ -215,6 +230,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         _settle(msg.sender, MAX_SETTLE_CYCLES);
 
         IIdleIslesContent.CombatActivity memory activity = CONTENT.getCombatActivity(activityId);
+        _requireActivityArea(msg.sender, activityId);
         if (currentHitpoints[msg.sender] == 0) revert NoHp();
         if (levelOf(msg.sender, Skill.Attack) < activity.reqAttack) revert RequirementLow();
         if (levelOf(msg.sender, Skill.Defence) < activity.reqDefence) revert RequirementLow();
@@ -236,6 +252,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
             activityId != ACTIVITY_TIN_HOLLOW &&
             activityId != ACTIVITY_RIVER_BEND
         ) revert BadActivity();
+        _requireActivityArea(msg.sender, activityId);
         if (activityId == ACTIVITY_ASH_GROVE) {
             if (levelOf(msg.sender, Skill.Woodcutting) < 1) revert RequirementLow();
         } else if (activityId == ACTIVITY_RIVER_BEND) {
@@ -256,6 +273,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
             activityId != ACTIVITY_COPPER_DAGGER &&
             activityId != ACTIVITY_COOK_MINNOW
         ) revert BadActivity();
+        _requireActivityArea(msg.sender, activityId);
 
         if (activityId == ACTIVITY_COOK_MINNOW) {
             if (levelOf(msg.sender, Skill.Cooking) < 1) revert RequirementLow();
@@ -287,6 +305,32 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
     function claim() external nonReentrant {
         if (!hasProfile[msg.sender]) revert NoProfile();
         _settle(msg.sender, MAX_SETTLE_CYCLES);
+    }
+
+    function travelToArea(uint8 areaId) external nonReentrant {
+        if (!hasProfile[msg.sender]) revert NoProfile();
+        if (!_isValidArea(areaId)) revert BadArea();
+        if (currentAreaId[msg.sender] == areaId) {
+            return;
+        }
+
+        _settle(msg.sender, MAX_SETTLE_CYCLES);
+
+        uint256 cost;
+        if (!_isAreaUnlocked(msg.sender, areaId)) {
+            cost = _areaShipCost(areaId);
+            if (balanceOf(msg.sender, CROWNS) < cost) revert MaterialLow();
+            _burn(msg.sender, CROWNS, cost);
+            unlockedAreaMask[msg.sender] |= _areaMask(areaId);
+        }
+
+        uint16 activityId = activeTask[msg.sender].activityId;
+        if (activityId != 0) {
+            _stopActivity(msg.sender, activityId, "TRAVEL");
+        }
+
+        currentAreaId[msg.sender] = areaId;
+        emit AreaTraveled(msg.sender, areaId, cost);
     }
 
     function settleFor(address player, uint16 maxCycles) external nonReentrant {
@@ -438,6 +482,10 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
     function equippedItem(address player, Slot slot) external view returns (uint256) {
         return _equippedItem(player, slot);
+    }
+
+    function isAreaUnlocked(address player, uint8 areaId) public view returns (bool) {
+        return _isAreaUnlocked(player, areaId);
     }
 
     function levelOf(address player, Skill skill) public view returns (uint8) {
@@ -662,6 +710,51 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
 
     function _isCombatActivity(uint16 activityId) internal pure returns (bool) {
         return activityId >= ACTIVITY_TRAINING_YARD && activityId <= ACTIVITY_VENOMOUS_DRAKE;
+    }
+
+    function _requireActivityArea(address player, uint16 activityId) internal view {
+        uint8 requiredAreaId = _activityAreaId(activityId);
+        if (!_isAreaUnlocked(player, requiredAreaId)) revert AreaLocked();
+        if (currentAreaId[player] != requiredAreaId) revert AreaRequired();
+    }
+
+    function _activityAreaId(uint16 activityId) internal pure returns (uint8) {
+        if (
+            (activityId >= ACTIVITY_CAVE_BAT && activityId <= ACTIVITY_HOLLOW_TREANT) ||
+            (activityId >= ACTIVITY_DIRE_WOLF && activityId <= ACTIVITY_VENOMOUS_DRAKE)
+        ) {
+            return AREA_OUTER_ISLES;
+        }
+
+        return AREA_STARTER;
+    }
+
+    function _isValidArea(uint8 areaId) internal pure returns (bool) {
+        return areaId == AREA_STARTER || areaId == AREA_OUTER_ISLES;
+    }
+
+    function _isAreaUnlocked(address player, uint8 areaId) internal view returns (bool) {
+        if (!_isValidArea(areaId)) {
+            return false;
+        }
+
+        return unlockedAreaMask[player] & _areaMask(areaId) != 0;
+    }
+
+    function _areaShipCost(uint8 areaId) internal pure returns (uint256) {
+        if (areaId == AREA_OUTER_ISLES) {
+            return OUTER_ISLES_PASSAGE_COST;
+        }
+
+        return 0;
+    }
+
+    function _areaMask(uint8 areaId) internal pure returns (uint8) {
+        if (areaId == AREA_OUTER_ISLES) {
+            return AREA_OUTER_ISLES_MASK;
+        }
+
+        return AREA_STARTER_MASK;
     }
 
     function _settleGather(
