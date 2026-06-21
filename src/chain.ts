@@ -11,10 +11,13 @@ import {
 } from 'viem'
 import { megaethTestnet } from 'viem/chains'
 import {
+  AREAS,
   EQUIPMENT_SLOTS,
   ITEMS,
   SKILLS,
+  STARTER_AREA_ID,
   type ActivityId,
+  type AreaId,
   type Equipment,
   type Inventory,
   type ItemId,
@@ -35,6 +38,8 @@ export interface ChainSnapshot {
   marketOrders: MarketOrder[]
   currentHitpoints: number
   maxHitpoints: number
+  currentAreaId: AreaId
+  unlockedAreaIds: AreaId[]
   active: {
     id: ActivityId
     startedAt: number
@@ -59,6 +64,11 @@ export const MEGAETH_TESTNET_PARAMS = {
   rpcUrls: ['https://carrot.megaeth.com/rpc'],
   blockExplorerUrls: ['https://megaeth-testnet-v2.blockscout.com'],
 }
+
+export const CONTRACT_AREA_IDS = {
+  starterArea: 1,
+  outerIsles: 2,
+} satisfies Record<AreaId, number>
 
 export const CONTRACT_ITEM_IDS = {
   crowns: 1n,
@@ -170,6 +180,13 @@ const ITEM_BY_CONTRACT_ID = Object.fromEntries(
   ]),
 ) as Record<string, ItemId | undefined>
 
+const AREA_BY_CONTRACT_ID = Object.fromEntries(
+  Object.entries(CONTRACT_AREA_IDS).map(([areaId, contractId]) => [
+    contractId.toString(),
+    areaId as AreaId,
+  ]),
+) as Record<string, AreaId | undefined>
+
 const idleIslesAbi = parseAbi([
   'function activeTask(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
   'function balanceOf(address account, uint256 id) view returns (uint256)',
@@ -178,11 +195,13 @@ const idleIslesAbi = parseAbi([
   'function cancelOrder(uint256 orderId)',
   'function createOrder(uint256 itemId, uint64 amount, uint128 priceEach)',
   'function createProfile()',
+  'function currentAreaId(address player) view returns (uint8)',
   'function currentHitpoints(address player) view returns (uint16)',
   'function eatFood(uint256 itemId)',
   'function equip(uint256 itemId)',
   'function equippedItem(address player, uint8 slot) view returns (uint256)',
   'function hasProfile(address player) view returns (bool)',
+  'function isAreaUnlocked(address player, uint8 areaId) view returns (bool)',
   'function maxHitpoints(address player) view returns (uint256)',
   'function nextOrderId() view returns (uint256)',
   'function orders(uint256 orderId) view returns (address seller, uint256 itemId, uint128 priceEach, uint64 amountRemaining)',
@@ -191,6 +210,7 @@ const idleIslesAbi = parseAbi([
   'function startArtisan(uint16 activityId)',
   'function startCombat(uint16 activityId)',
   'function startGather(uint16 activityId)',
+  'function travelToArea(uint8 areaId)',
   'function unequip(uint8 slot)',
 ])
 
@@ -238,6 +258,8 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
       marketOrders,
       currentHitpoints: 0,
       maxHitpoints: 0,
+      currentAreaId: STARTER_AREA_ID,
+      unlockedAreaIds: [STARTER_AREA_ID],
       active: null,
       pendingCycles: 0,
     }
@@ -248,6 +270,8 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
     maxHitpoints,
     activeTask,
     pendingCycles,
+    currentAreaValue,
+    areaUnlockedValues,
     skillValues,
     balances,
     equippedValues,
@@ -276,6 +300,22 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
       functionName: 'pendingCycles',
       args: [account],
     }),
+    publicClient.readContract({
+      address,
+      abi: idleIslesAbi,
+      functionName: 'currentAreaId',
+      args: [account],
+    }),
+    Promise.all(
+      AREAS.map((area) =>
+        publicClient.readContract({
+          address,
+          abi: idleIslesAbi,
+          functionName: 'isAreaUnlocked',
+          args: [account, CONTRACT_AREA_IDS[area.id]],
+        }),
+      ),
+    ),
     Promise.all(
       SKILLS.map((_, index) =>
         publicClient.readContract({
@@ -325,6 +365,8 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
     marketOrders,
     currentHitpoints: Number(currentHitpoints),
     maxHitpoints: Number(maxHitpoints),
+    currentAreaId: formatChainArea(currentAreaValue),
+    unlockedAreaIds: formatUnlockedAreas(areaUnlockedValues),
     active: formatActiveTask(activeTask),
     pendingCycles: Number(pendingCycles),
   }
@@ -453,6 +495,23 @@ export async function writeEatFood(
   return hash
 }
 
+export async function writeTravelToArea(
+  provider: BrowserEthereumProvider,
+  account: Address,
+  areaId: AreaId,
+) {
+  const walletClient = createIdleWalletClient(provider, account)
+  const hash = await walletClient.writeContract({
+    address: requireIdleIslesAddress(),
+    abi: idleIslesAbi,
+    functionName: 'travelToArea',
+    args: [CONTRACT_AREA_IDS[areaId]],
+  })
+
+  await waitForTransaction(hash)
+  return hash
+}
+
 export async function writeCreateOrder(
   provider: BrowserEthereumProvider,
   account: Address,
@@ -551,6 +610,20 @@ function formatActiveTask(activeTask: readonly [number, bigint, bigint]) {
     startedAt: Number(activeTask[1]) * 1000,
     lastClaimAt: Number(activeTask[2]) * 1000,
   }
+}
+
+function formatChainArea(areaId: number): AreaId {
+  return AREA_BY_CONTRACT_ID[areaId.toString()] ?? STARTER_AREA_ID
+}
+
+function formatUnlockedAreas(areaUnlockedValues: readonly boolean[]): AreaId[] {
+  const unlockedAreaIds = AREAS.flatMap((area, index) =>
+    areaUnlockedValues[index] ? [area.id] : [],
+  )
+
+  return unlockedAreaIds.includes(STARTER_AREA_ID)
+    ? unlockedAreaIds
+    : [STARTER_AREA_ID, ...unlockedAreaIds]
 }
 
 async function readChainMarketOrders(

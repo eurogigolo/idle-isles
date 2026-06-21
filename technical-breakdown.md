@@ -15,7 +15,7 @@ Primary files:
 - `contracts/IdleIsles.sol`: current Solidity alpha foundation for profile creation, combat settlement, equipment, food, marketplace orders, death penalty, and session settlement.
 - `contracts/IdleIslesContent.sol`: immutable static content contract for item slots, item stats, food healing, combat activity definitions, and combat drop tables.
 - `contracts/IIdleIslesContent.sol`: interface shared by the core contract and the deployed content contract.
-- `hardhat.config.ts`: Hardhat 3 configuration for contract builds/tests using the viem toolbox, Solidity 0.8.28, and 1 optimizer run on both default and production profiles. The contract pragma remains `^0.8.24`, but OpenZeppelin 5.6.1 requires a compiler new enough for the `mcopy` builtin. Optimized default builds are required because bytecode size is a hard constraint for the stateful core contract. The optimizer is biased toward smaller deployed bytecode because gameplay content is currently the limiting factor.
+- `hardhat.config.ts`: Hardhat 3 configuration for contract builds/tests using the viem, network helper, and Node test-runner plugins, Solidity 0.8.28, and 1 optimizer run on both default and production profiles. The contract pragma remains `^0.8.24`, but OpenZeppelin 5.6.1 requires a compiler new enough for the `mcopy` builtin. Optimized default builds are required because bytecode size is a hard constraint for the stateful core contract. The optimizer is biased toward smaller deployed bytecode because gameplay content is currently the limiting factor.
 - `scripts/deploy.ts`: Hardhat 3 + viem deployment script for the `IdleIslesContent` and `IdleIsles` contract pair. It writes deployment addresses to `deployments/<network>.json`.
 - `test/IdleIsles.ts`: Node test runner + viem contract tests for level thresholds, profile creation, and training combat settlement.
 - `plan.md`: playable alpha roadmap.
@@ -107,7 +107,7 @@ currentAreaId: AreaId
 unlockedAreaIds: AreaId[]
 ```
 
-Every profile starts in the Starter Area. The Outer Isles route is unlocked locally by paying the Harbor Merchant 50,000 Crowns for ship passage.
+Every profile starts in the Starter Area. The Outer Isles route is unlocked by paying the Harbor Merchant 50,000 Crowns for ship passage; Chain mode stores the same current/unlocked area state onchain.
 
 Persistence:
 
@@ -260,7 +260,7 @@ Areas:
 - Unmapped zones belong to `starterArea`.
 - `getActivityLocks` now includes area locks before skill/equipment locks.
 - `travelToArea` claims completed local cycles, unlocks the destination if the player can pay its ship cost, sets `currentAreaId`, and stops the active task for travel.
-- Chain mode does not currently write area state onchain; ship routes are disabled there until contract support is added.
+- Chain mode writes current/unlocked area state onchain and uses `travelToArea(uint8)` to burn Crowns for first Outer Isles passage.
 
 Activity start flow:
 
@@ -827,6 +827,8 @@ Implemented contract areas:
 
 - Profile creation.
 - Initial Crowns mint.
+- Current/unlocked area storage.
+- Crown-burn ship travel.
 - Skill XP storage.
 - Current HP storage.
 - Combat activity settlement.
@@ -998,6 +1000,7 @@ Known areas where the frontend and contract differ:
 - Frontend combat safety settings now model auto-eat and stop-at HP locally; contract has analogous `configureAutoSettle` fields, but the frontend is not wired to write them yet.
 - Frontend has deterministic local random rolls; contract uses block data and keccak.
 - Frontend cycle speed is in milliseconds; contract cycle speed is in seconds.
+- Chain mode has onchain Starter Area and Outer Isles travel, but many local Outer Isles activities are still waiting for contract settlement parity.
 
 Before a serious testnet build, `solidity-notes.md` should be worked down until these surfaces match.
 
@@ -1071,7 +1074,7 @@ Latest contract build verification:
 npm.cmd run build:contracts
 ```
 
-Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the starter gather/artisan additions currently compile without a bytecode-size warning. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After removing Strength, deployed bytecode measures 23,272 bytes for `IdleIsles` and 5,348 bytes for `IdleIslesContent`.
+Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the starter gather/artisan additions currently compile without a bytecode-size warning. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After adding onchain area travel, deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
 
 Latest full verification:
 
@@ -1082,7 +1085,7 @@ npm.cmd run build
 npm.cmd run lint
 ```
 
-Result: all pass after the Strength removal pass. Contract tests are at 15 passing Node test-runner tests. Deployed bytecode measures 23,272 bytes for `IdleIsles` and 5,348 bytes for `IdleIslesContent`.
+Result: all pass after the onchain area travel pass. Contract tests are at 17 passing Node test-runner tests. Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`.
 
 Initial contract test coverage:
 
@@ -1110,11 +1113,11 @@ Latest contract test verification:
 npm.cmd run test:contracts
 ```
 
-Result: passes with 15 Node test-runner tests.
+Result: passes with 17 Node test-runner tests.
 
 Tooling note: after adding the expanded tests, the first rerun was blocked before test execution by a Windows `EPERM` rename failure in Hardhat's generated `cache/compile-cache.json` file. `npx.cmd hardhat clean` was run to clear generated cache/artifact state before rerunning the normal test script.
 
-Current result: passes with 15 Node test-runner tests, including starter gather/artisan, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, equipment burn/remint, and combat death gear/Crown loss.
+Current result: passes with 17 Node test-runner tests, including area gates/travel guards, starter gather/artisan, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, equipment burn/remint, and combat death gear/Crown loss.
 
 ## 23. Current Playable Alpha Status
 

@@ -21,6 +21,7 @@ describe("IdleIsles", async function () {
   const HIDE = 70n;
   const FIELD_CHARM = 71n;
   const TRAINING_YARD = 101;
+  const CAVE_BAT = 104;
   const ASH_GROVE = 201;
   const COPPER_RIDGE = 202;
   const TIN_HOLLOW = 203;
@@ -33,6 +34,8 @@ describe("IdleIsles", async function () {
   const SLOT_CHEST = 3;
   const SLOT_LEGS = 4;
   const SLOT_TRINKET = 5;
+  const AREA_STARTER = 1;
+  const AREA_OUTER_ISLES = 2;
 
   async function deployIdleIsles() {
     const content = await viem.deployContract("IdleIslesContent");
@@ -107,6 +110,23 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.currentHitpoints([player.account.address]), 10);
     assert.equal(await game.read.balanceOf([player.account.address, 1n]), 80n);
     assert.equal(await game.read.maxHitpoints([player.account.address]), 10n);
+    assert.equal(await game.read.currentAreaId([player.account.address]), AREA_STARTER);
+    assert.equal(await game.read.isAreaUnlocked([player.account.address, AREA_STARTER]), true);
+    assert.equal(await game.read.isAreaUnlocked([player.account.address, AREA_OUTER_ISLES]), false);
+  });
+
+  it("requires ship passage before Outer Isles activities can start", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+
+    await assert.rejects(() => game.write.travelToArea([AREA_OUTER_ISLES]));
+    await assert.rejects(() => game.write.startCombat([CAVE_BAT]));
+
+    assert.equal(await game.read.currentAreaId([player.account.address]), AREA_STARTER);
+    assert.equal(await game.read.isAreaUnlocked([player.account.address, AREA_OUTER_ISLES]), false);
+    assert.equal(await game.read.balanceOf([player.account.address, CROWNS]), 80n);
   });
 
   it("settles completed combat cycles and grants training rewards", async function () {

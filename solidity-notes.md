@@ -4,9 +4,9 @@ This file tracks every gameplay change that must be reflected onchain. The front
 
 ## Current Contract Gap
 
-`contracts/IdleIsles.sol` now has the lazy combat settlement foundation, death penalties, slot-based equipment, auto-settle session preferences, marketplace cancellation, starter gather/artisan paths, and starter fishing/cooking. Static item/combat lookup content has been split into immutable `IdleIslesContent` through `IIdleIslesContent` so the stateful core has room to grow. The content contract now also includes the expanded combat definitions for Goblin Forager, Giant Spider, Dire Wolf, and Venomous Drake, plus item slot/stat definitions for Crafting light armor and the legs equipment slot. The system is still not fully content-complete with `src/game.ts`; higher-tier gather, Crafting settlement, full artisan parity, full cooking, the Realm Scavenger floor, and area state still need to be ported before a serious testnet build.
+`contracts/IdleIsles.sol` now has the lazy combat settlement foundation, death penalties, slot-based equipment, auto-settle session preferences, marketplace cancellation, starter gather/artisan paths, starter fishing/cooking, and authoritative Starter Area/Outer Isles travel. Static item/combat lookup content has been split into immutable `IdleIslesContent` through `IIdleIslesContent` so the stateful core has room to grow. The content contract now also includes the expanded combat definitions for Goblin Forager, Giant Spider, Dire Wolf, and Venomous Drake, plus item slot/stat definitions for Crafting light armor and the legs equipment slot. The system is still not fully content-complete with `src/game.ts`; higher-tier gather, Crafting settlement, full artisan parity, full cooking, and the Realm Scavenger floor still need to be ported before a serious testnet build.
 
-The frontend now has local-only area routing for Idle Isles. Profiles start in the Starter Area, and the Harbor Merchant can unlock Outer Isles travel for 50,000 Crowns. The contract does not yet store current/unlocked areas or burn Crowns for ship passage, so this must be added before area gates can be authoritative in Chain mode.
+The frontend now has area routing for Idle Isles in both local and Chain mode. Profiles start in the Starter Area, and the Harbor Merchant can unlock Outer Isles travel for 50,000 Crowns. Chain mode stores current/unlocked areas, burns Crowns for first passage, stops active tasks on travel, and blocks Outer Isles activities until the player has unlocked and selected that area.
 
 Community-created content is not implemented onchain yet. Treat it as a major protocol design area, not a small content addition. User-authored content can only be allowed into the main economy after it has an explicit approval model, versioning rules, generated ID management, settlement tests, and balance review. Permissionless user-created activities must not be able to mint core ERC-1155 items, mint Crowns, bypass costs, bypass death penalties, or call arbitrary external logic from the settlement path.
 
@@ -32,7 +32,7 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 - Revert strings were replaced with Solidity custom errors to reduce deployed bytecode while keeping guard failures typed and explicit.
 - Item and activity constants are internal, with numeric IDs documented in this file and the technical breakdown, to avoid public getter bytecode for every content constant.
 - Static item/combat content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
-- Current compiled bytecode after removing Strength: `IdleIsles` is 23,272 deployed bytes and `IdleIslesContent` is 5,348 deployed bytes. The 15-test Hardhat suite passes against the two-contract deployment shape.
+- Current compiled bytecode after adding onchain area travel: `IdleIsles` is 24,079 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 17-test Hardhat suite passes against the two-contract deployment shape.
 - Auto-settle session preferences exist through `configureAutoSettle`.
 - Authorized operators can call `settleFor`.
 - Session safety can stop combat at a configured HP threshold.
@@ -93,8 +93,8 @@ xpRequiredForLevel(L) = 75 * (L - 1)^2 + 45 * (L - 1)^3 + (L - 1)^4
 ### Player State
 
 - Add `currentHitpoints`.
-- Add current area and unlocked area tracking before area gates are used for onchain progression.
-- Add a Crown-burn ship passage action for merchant travel between areas.
+- Continue porting Outer Isles activity content behind the onchain area gates.
+- Add generated area IDs once content generation replaces manual mappings.
 - Add max HP calculation from Hitpoints level plus equipped gear bonuses.
 - Clamp current HP when gear is unequipped and max HP drops.
 - Prevent combat start when current HP is 0.

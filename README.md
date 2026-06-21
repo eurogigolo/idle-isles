@@ -61,8 +61,10 @@ The deploy script writes `deployments/megaeth-testnet.json` and prints the
 - Hoard Hall order panel using in-game crowns, player listings, and 5% Realm Scavenger buy floors.
 - Wallet connect and MegaETH Testnet network helper.
 - Optional contract mode for profile reads, balances, `createProfile`, core activity starts, `claim`,
-  `equip`, `unequip`, `eatFood`, marketplace order reads, listing, buying, and cancellation.
-- Area unlocks and ship travel are local-only until the contract gets area storage and Crown-burn passage support.
+  `equip`, `unequip`, `eatFood`, marketplace order reads, listing, buying, cancellation, and ship
+  travel between supported areas.
+- Area unlocks and ship travel are onchain for Starter Area and Outer Isles; higher-tier activity
+  parity is still being ported.
 - MegaETH deploy script for `IdleIslesContent` + `IdleIsles`.
 - Starter Solidity contract in `contracts/IdleIsles.sol`, plus immutable content for the expanded combat/light-armor item definitions.
 
