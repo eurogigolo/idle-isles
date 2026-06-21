@@ -1,0 +1,28 @@
+{
+  "network": "megaethTestnet",
+  "chainId": 6343,
+  "deployedAt": "2026-06-21T16:25:04.367Z",
+  "deployer": "0x4cb9b2fde8bb73e82dd343bc256c5dae96786ff7",
+  "metadataUri": "ipfs://idle-isles/{id}.json",
+  "contracts": {
+    "IdleIslesContent": {
+      "address": "0x4241855B8e60763cDa332a66C741958B9D06681D",
+      "transactionHash": "0x83b0ddbf36a6836b71280043190a59a44a18e2ba74f2487afc22b7d5f51530c7",
+      "blockNumber": "22348648",
+      "gasUsed": "61966143"
+    },
+    "IdleIsles": {
+      "address": "0x514b296Ac7958F8A2Bfd2091d5Db8c46E6C4050E",
+      "transactionHash": "0xe2097d719464b76cc85a2ba37b64f8df6a66ef8e3e66222a1cf2d92a9c809ead",
+      "blockNumber": "22348649",
+      "gasUsed": "250103397",
+      "constructorArgs": [
+        "ipfs://idle-isles/{id}.json",
+        "0x4241855B8e60763cDa332a66C741958B9D06681D"
+      ]
+    }
+  },
+  "frontendEnv": {
+    "VITE_IDLE_ISLES_ADDRESS": "0x514b296Ac7958F8A2Bfd2091d5Db8c46E6C4050E"
+  }
+}

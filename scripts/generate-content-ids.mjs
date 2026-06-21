@@ -17,7 +17,7 @@ if (checkMode) {
     // Missing generated output is reported by the drift check below.
   }
 
-  if (current !== output) {
+  if (normalizeLineEndings(current) !== normalizeLineEndings(output)) {
     console.error(`${outputPath} is out of date. Run npm run content:generate.`)
     process.exitCode = 1
   } else {
@@ -79,4 +79,8 @@ function formatActivityEntries(entries) {
 
 function formatKey(value) {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value) ? value : JSON.stringify(value)
+}
+
+function normalizeLineEndings(value) {
+  return value.replace(/\r\n/g, '\n')
 }
