@@ -1570,8 +1570,22 @@ h2 {
   flex: 0 0 auto;
 }
 
+.action-panels {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-width: 0;
+}
+
 .action-dock {
   overflow: hidden;
+  min-width: 0;
+}
+
+.resource-action-panel,
+.combat-action-panel {
+  align-content: start;
+  min-height: 430px;
 }
 
 .dock-heading {
@@ -1589,6 +1603,25 @@ h2 {
   gap: 8px;
 }
 
+.combat-heading {
+  align-items: center;
+}
+
+.combat-heading-copy {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--ink);
+  gap: 8px;
+}
+
+.combat-heading-copy strong {
+  overflow: hidden;
+  font-size: 0.95rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .segmented {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1597,6 +1630,10 @@ h2 {
   padding: 4px;
   border-radius: 8px;
   background: rgba(38, 34, 28, 0.09);
+}
+
+.resource-segmented {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .segmented button,
@@ -1672,6 +1709,25 @@ h2 {
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
   gap: 10px;
   padding: 10px;
+}
+
+.combat-safety {
+  border-top: 1px solid var(--line);
+}
+
+.combat-safety-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  color: var(--ink);
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.combat-safety-title strong {
+  margin-left: auto;
+  font-size: 0.86rem;
 }
 
 .empty-activities {
@@ -2627,6 +2683,10 @@ h2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .action-panels {
+    grid-template-columns: 1fr;
+  }
+
   .right-rail {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -2655,6 +2715,7 @@ h2 {
 
   .status-strip,
   .skills-panel .skill-list,
+  .action-panels,
   .right-rail,
   .activity-list {
     grid-template-columns: 1fr;
