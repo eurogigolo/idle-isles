@@ -13,8 +13,8 @@ As of the latest implementation pass:
 - Onchain gameplay currently supports profile creation, area travel, combat settlement, equipment burn/remint, death penalties, marketplace list/buy/cancel, Ash Grove, Copper Ridge, Tin Hollow, River Bend, Wood Armory, Copper Smelter, Copper Dagger, and Cook Minnow.
 - Starter food loop is onchain: Raw Minnow can be fished, Cook Minnow can burn or produce Cooked Minnow, raw fish cannot heal, Cooked Minnow heals, and combat auto-eat can consume gameplay-created food.
 - Verification commands currently pass through `npm.cmd run verify`, including linting, audit, content ID validation, Solidity build, bytecode budget checks, contract tests, and frontend build.
-- Contract tests currently pass at 17 Node test-runner tests.
-- Deployed bytecode measures 24,079 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`; `IdleIsles` is capped by a 24,200-byte project budget in CI.
+- Contract tests currently pass at 19 Node test-runner tests.
+- Deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`; `IdleIsles` is capped by a 24,200-byte project budget in CI.
 - Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS`, for profile reads, balances, area travel, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
 - MegaETH deployment config and `npm run deploy:megaeth` now deploy `IdleIslesContent` followed by `IdleIsles`, then write `deployments/megaeth-testnet.json` with the frontend contract address.
 
@@ -180,7 +180,7 @@ Rules:
 Recovery:
 
 - Players recover hitpoints by eating cooked food.
-- Local combat safety controls can auto-eat selected food and stop combat at a configured HP threshold.
+- Combat safety controls can auto-eat selected food and stop combat at a configured HP threshold while auto-eat is enabled.
 - Optional later: slow passive recovery while not in combat.
 - Optional later: potions or prayers can modify damage/recovery.
 

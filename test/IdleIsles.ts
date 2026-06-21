@@ -145,7 +145,34 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.skillXp([player.account.address, 2]), 16n);
   });
 
-  it("stops auto-settle at the configured HP threshold without death loss", async function () {
+  it("stops auto-eat safety at the configured HP threshold without death loss", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+    const latest = await networkHelpers.time.latest();
+
+    await game.write.createProfile();
+    await game.write.configureAutoSettle([
+      ZERO_ADDRESS,
+      BigInt(latest + 3600),
+      10,
+      10,
+      true,
+      0,
+      COOKED_MINNOW,
+    ]);
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    const activeTask = await game.read.activeTask([player.account.address]);
+
+    assert.equal(activeTask[0], 0);
+    assert.equal(await game.read.currentHitpoints([player.account.address]), 10);
+    assert.equal(await game.read.balanceOf([player.account.address, CROWNS]), 80n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
+  });
+
+  it("ignores the configured HP threshold when auto-eat is disabled", async function () {
     const [player] = await viem.getWalletClients();
     const game = await deployIdleIsles();
     const latest = await networkHelpers.time.latest();
@@ -166,10 +193,9 @@ describe("IdleIsles", async function () {
 
     const activeTask = await game.read.activeTask([player.account.address]);
 
-    assert.equal(activeTask[0], 0);
-    assert.equal(await game.read.currentHitpoints([player.account.address]), 10);
-    assert.equal(await game.read.balanceOf([player.account.address, CROWNS]), 80n);
-    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
+    assert.equal(activeTask[0], TRAINING_YARD);
+    assert.equal(await game.read.balanceOf([player.account.address, CROWNS]), 82n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 1n);
   });
 
   it("escrows listed items and transfers them to buyers", async function () {

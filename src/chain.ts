@@ -416,6 +416,10 @@ export async function writeConfigureCombatSafety(
   })
 }
 
+export async function writeClearCombatSafety(provider: BrowserEthereumProvider, account: Address) {
+  return writeIdleIslesContract(provider, account, { functionName: 'clearAutoSettle', args: [] })
+}
+
 export async function writeTravelToArea(
   provider: BrowserEthereumProvider,
   account: Address,

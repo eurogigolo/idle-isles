@@ -911,7 +911,7 @@ contract IdleIsles is ERC1155, ERC1155Holder, ReentrancyGuard {
         AutoSettleConfig memory config = autoSettleConfig[player];
         nextFoodUsed = foodUsed;
 
-        if (!config.enabled || block.timestamp > config.expiresAt) {
+        if (!config.enabled || !config.autoEat || block.timestamp > config.expiresAt) {
             return (true, nextFoodUsed);
         }
 
