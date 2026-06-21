@@ -27,6 +27,8 @@
     "viem": "^2.52.2"
   },
   "devDependencies": {
+    "@emnapi/core": "^1.11.1",
+    "@emnapi/runtime": "^1.11.1",
     "@eslint/js": "^10.0.1",
     "@nomicfoundation/hardhat-network-helpers": "^3.0.10",
     "@nomicfoundation/hardhat-node-test-runner": "^3.0.17",
