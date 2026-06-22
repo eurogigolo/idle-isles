@@ -59,6 +59,30 @@ npm run deploy:megaeth
 The deploy script writes `deployments/megaeth-testnet.json` and prints the
 `VITE_IDLE_ISLES_ADDRESS` and `VITE_HOARD_HALL_ADDRESS` values for frontend Chain mode.
 
+## Deploy the Web App to Railway
+
+The repository includes `railway.json` and a production `npm start` command. Railway will build
+the Vite app and serve the generated `dist/` folder on Railway's assigned `PORT`.
+
+Set these Railway service variables before deploying:
+
+```bash
+VITE_IDLE_ISLES_ADDRESS=0x...
+VITE_HOARD_HALL_ADDRESS=0x...
+```
+
+Do not add `MEGAETH_PRIVATE_KEY` to the Railway frontend service. The deployer key is only needed
+locally when deploying fresh contracts.
+
+Railway config-as-code uses:
+
+```bash
+npm ci && npm run build
+npm start
+```
+
+After deployment, open the Railway service's Networking settings and generate a public domain.
+
 ## Current Slice
 
 - Browser-playable AFK activities with persisted local progress.

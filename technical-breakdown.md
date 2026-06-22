@@ -22,7 +22,7 @@ Primary files:
 - `scripts/check-bytecode-size.mjs`: deployed bytecode budget gate. `IdleIsles` currently has a 24,200-byte project budget below the 24,576-byte EIP-170 hard limit.
 - `scripts/check-content-ids.mjs`: validates the core ID registry for namespace format, uniqueness, and basic references.
 - `scripts/generate-content-ids.mjs`: generates `src/generated/contentIds.ts` from the checked core ID registry.
-- `test/IdleIsles.ts`: Node test runner + viem contract tests for level thresholds, profile creation, and training combat settlement.
+- `test/IdleIsles.ts`: Node test runner + viem contract tests for level thresholds, profile creation, content decoding, ranged recipe/stat wiring, combat settlement, crafting, cooking, equipment, death, and Hoard Hall.
 - `plan.md`: playable alpha roadmap.
 - `solidity-notes.md`: contract parity checklist and onchain implementation notes.
 - `technical-breakdown.md`: this document.
@@ -101,6 +101,7 @@ interface CombatSettings {
   stopAtHitpoints: number
   foodItemId: ItemId | null
   maxFoodPerClaim: number
+  trainingStyle: 'auto' | 'attack' | 'ranged' | 'magic'
 }
 ```
 
@@ -151,8 +152,10 @@ Current skills:
 | Smithing | Bars and equipment |
 | Cooking | Converts raw fish into healing food |
 | Crafting | Converts monster hides/scales and logs into light armor |
+| Ranged | Combat accuracy/unlocks and XP for bow-based combat |
+| Magic | Reserved combat style skill; wired in XP/accuracy routing but no magic weapons are currently registered |
 
-Future skills are mentioned in the plan but not implemented: Ranged, Magic, Fletching, Slayer, Farming, Prayer.
+Future skills are mentioned in the plan but not implemented: Fletching, Slayer, Farming, Prayer.
 
 ## 5. Progression Math
 
@@ -355,8 +358,9 @@ rollPercent = fractionalPart(x) * 100
 
 Usage:
 
-- Combat hit checks use salt `17`.
+- Incoming combat damage chance uses salt `17`.
 - Combat damage amount uses salt `31`.
+- Player combat accuracy checks use salt `89`.
 - Cooking burn checks use salt `53`.
 - Rare drops use salt `71 + dropIndex * 13`.
 
@@ -385,6 +389,16 @@ This is acceptable for an alpha/testnet foundation but not strong enough for val
 
 ## 11. Combat System
 
+Combat styles:
+
+- Combat currently resolves as `Melee`, `Ranged`, or `Magic`.
+- `startCombat(uint16)` keeps the existing ABI and auto-detects the style from the equipped weapon.
+- Players can explicitly lock training to Attack/Melee, Ranged, or Magic. `Auto` falls back to weapon detection.
+- No weapon, wood/metal melee weapons, and unknown weapon style fall back to Melee.
+- Bows resolve as Ranged.
+- Magic is wired into the enum, skill table, XP/accuracy routing, and Rune Dust consumption, but no magic weapon content is registered yet.
+- The resolved style is emitted on `CombatSettled`.
+
 Current combat activities:
 
 | Activity | Requirements | Equipment | Cycle | XP | Base Rewards |
@@ -392,6 +406,7 @@ Current combat activities:
 | Training Yard | Attack 1 | none | 7s | 15 Atk, 8 Def, 8 HP | 1 Tanned Hide, 2 Crowns |
 | Field Rat | Attack 4, HP 3 | none | 8.5s | 22 Atk, 10 Def, 13 HP | 1 Tanned Hide, 4 Crowns, 1 Raw Minnow |
 | Moss Camp | Attack 8, Def 7, HP 7 | Copper Dagger | 11s | 35 Atk, 22 Def, 20 HP | 1 Thick Hide, 8 Crowns, 1 Rune Dust |
+| Feather Hawk | Attack 12, Def 9, HP 10 | none | 10s | 44 Atk, 26 Def, 26 HP | 1 Feather, 10 Crowns |
 | Goblin Forager | Attack 10, Def 8, HP 10 | none | 10s | 42 Atk, 28 Def, 25 HP | 1 Thick Hide, 6 Crowns |
 | Giant Spider | Attack 20, Def 18, HP 18 | Iron Sword | 12s | 60 Atk, 35 Def, 35 HP | 1 Rugged Hide, 12 Crowns |
 | Dire Wolf | Attack 35, Def 30, HP 32 | Steel Longsword | 15s | 85 Atk, 55 Def, 60 HP | 1 Cobalt Scale, 45 Crowns |
@@ -401,17 +416,54 @@ Current combat activities:
 | Crypt Knight | Attack 38, Def 35, HP 36 | Steel Longsword | 17s | 95 Atk, 64 Def, 68 HP | 58 Crowns, 1 Rune Dust |
 | Hollow Treant | Attack 55, Def 50, HP 52 | Steel Longsword | 26s | 180 Atk, 120 Def, 120 HP | 140 Crowns, 4 Pine Logs, 1 Rune Dust |
 
+Requirement note:
+
+- The contract still stores the primary combat requirement as `reqAttack` in `CombatActivity` for bytecode/interface stability.
+- At combat start, the requirement is checked against the skill for the resolved style: Attack for Melee, Ranged for Ranged, Magic for Magic.
+- Defence and Hitpoints requirements are unchanged.
+
 Combat damage:
 
 ```text
-if rollPercent(startedAt, cycleIndex, 17) >= damageChance:
+if roll(startedAt, cycleIndex, 17) >= damageChance:
   damage = 0
 else:
   range = maxDamage - minDamage + 1
-  rawDamage = minDamage + floor((rollPercent(startedAt, cycleIndex, 31) / 100) * range)
+  rawDamage = minDamage + roll(startedAt, cycleIndex, 31) % range
   mitigation = floor((defenceLevel - 1) / 5) + floor(equipmentDefence / 3)
   damage = max(0, rawDamage - mitigation)
 ```
+
+This damage is incoming monster damage to the player. Player weapon damage is used in the accuracy calculation and keeps the "weapon determines max hit" philosophy without expanding the combat cycle into per-swing simulation.
+
+Player accuracy:
+
+```text
+weaponDamage = max(1, equippedWeapon.damage)
+styleLevel = level(Attack/Ranged/Magic based on resolved style)
+maxHitProxy = weaponDamage + floor((styleLevel - 1) / 12)
+offence = styleLevel * 120 + weaponAccuracy * 75 + maxHitProxy * 40 + 100
+monsterDefence = activity.reqDefence * 100 + 100
+accuracyBps = min(9800, 1500 + offence * 8000 / (offence + monsterDefence))
+```
+
+- Training Yard is always hittable so starter combat remains deterministic.
+- If the accuracy check misses, the player can still take incoming damage, but combat XP and base/rare rewards for that cycle are not granted.
+- On a successful hit, the primary combat XP is awarded to Attack/Ranged/Magic based on style; Defence and Hitpoints XP still use the activity values.
+
+Ranged ammunition:
+
+- Ranged cycles require arrows.
+- The contract picks the highest available ammo tier in this order: Tungsten, Steel, Iron, Bronze.
+- One arrow is burned per Ranged combat cycle.
+- If no arrows are available, settlement stops the active combat task with reason `NO_AMMO`.
+- Arrow consumption emits `CombatConsumableUsed` and is also visible through normal ERC-1155 burn/transfer events.
+
+Magic placeholder consumption:
+
+- Magic cycles currently burn 1 Rune Dust per completed Magic-style cycle.
+- If no Rune Dust is available, settlement stops the active combat task with reason `NO_RUNE`.
+- Rune Dust consumption emits `CombatConsumableUsed`.
 
 If damage would reduce HP to 0 or below:
 
@@ -454,6 +506,7 @@ Preview state now separates:
 
 - `stoppedByHp`: death/fatal combat stop.
 - `stoppedBySafety`: non-death safety stop.
+- `stoppedBySupply`: Ranged/Magic supply stop.
 
 This prevents safety stops from triggering gear and Crown loss.
 
@@ -480,6 +533,8 @@ Rare drops:
 | Venomous Drake | Rune Dust | 10% |
 | Cave Bat | Raw Trout | 18% |
 | Cave Bat | Rune Dust | 6% |
+| Cave Bat | Feathers x2 | 12% |
+| Feather Hawk | Feathers x2 | 25% |
 | Bandit Scout | Iron Helm | 3.5% |
 | Bandit Scout | Steel Bar | 5% |
 | Crypt Knight | Steel Helm | 2.5% |
@@ -862,10 +917,12 @@ Contract state includes:
 
 - `hasProfile`
 - `currentHitpoints`
+- `currentAreaId`
 - `skillXp`
 - `activeTask`
 - `equipment`
 - `autoSettleConfig`
+- `unlockedAreaMask`
 - immutable content contract reference
 
 Contract custom errors:
@@ -879,6 +936,7 @@ Important structs:
 - `ActiveTask`
 - `Equipment`
 - `Stats`
+- `WeaponStats`
 - `CombatActivity`
 - `Drop`
 - `AutoSettleConfig`
@@ -903,6 +961,8 @@ Contract skills enum, zero-based:
 6. Smithing
 7. Cooking
 8. Crafting
+9. Ranged
+10. Magic
 
 Contract level formula:
 
@@ -926,10 +986,12 @@ Contract combat start:
 - Requires profile.
 - Settles pending activity first.
 - Checks HP > 0.
-- Checks Attack, Defence, Hitpoints requirements.
+- Resolves combat style from the saved preference first, falling back to equipped weapon auto-detection when preference is `Auto`.
+- Checks Attack/Ranged/Magic, Defence, and Hitpoints requirements. The primary combat requirement is stored as `reqAttack` in content, then applied to the resolved style skill.
 - Checks required equipped item.
 - Writes `ActiveTask`.
 - Emits `ActivityStarted`.
+- The saved preference is exposed as `combatStylePreference(address)` and is stored in unused high bits of the existing per-player area mask to preserve bytecode budget.
 
 Contract Gather:
 
@@ -942,7 +1004,7 @@ Contract Gather:
 Contract Artisan:
 
 - `startArtisan(activityId)` settles the previous task, reads packed recipe data from `IdleIslesContent`, checks the profile, area, primary skill level, and materials, then starts the task.
-- Registered Artisan IDs are contiguous from `301` through `339`, covering Wood Armory, Bark Leggings, Copper/Iron/Steel/Tungsten Smithing recipes, Crafting light armor recipes, and Cook Minnow through Cook Leviathan.
+- Registered Artisan IDs are contiguous from `301` through `351`, covering Wood Armory, Bark Leggings, Copper/Iron/Steel/Tungsten Smithing recipes, Crafting light armor recipes, Cook Minnow through Cook Leviathan, Arrowtip smithing, Bow crafting, and Arrow crafting.
 - Recipe costs and rewards are packed as up to three item/amount pairs. Settlement burns all packed costs per completed cycle and mints all packed rewards per completed cycle.
 - Cooking recipes use the same Artisan path, but their config includes cooked item and burn parameters. Raw fish is burned per attempt, Cooking XP is granted per attempt, and cooked food is minted only for successful attempts.
 - Cooking burn chance is stored in basis points:
@@ -954,6 +1016,10 @@ burnChanceBps = max(minBurnChanceBps, burnChanceBps - (cookingLevel - 1) * burnR
 - Burned raw fish disappears permanently.
 - This is the legitimate onchain gear creation path and avoids any production admin mint/faucet surface.
 - Some high-tier registered recipes still depend on combat drops or rare materials, but local gather/fishing/mining source routes are now represented onchain.
+- Ranged equipment recipes currently include:
+  - Arrowtips: Bronze, Iron, Steel, and Tungsten arrowtips from bars.
+  - Bows: Ash, Pine, Oak, and Ironbark bows directly from logs.
+  - Arrows: Bronze, Iron, Steel, and Tungsten arrows from logs, matching arrowtips, and Feathers.
 
 Contract settlement:
 
@@ -962,8 +1028,9 @@ Contract settlement:
 - Computes possible cycles from elapsed time and adjusted cycle seconds.
 - Applies the settlement cap: 1,000 cycles for non-combat activities and 200 cycles for combat.
 - Resolves cycles one by one.
-- Stops on auto-settle safety stop or death.
-- Emits `CombatSettled`.
+- Stops on auto-settle safety stop, no ranged ammunition, no Magic Rune Dust, or death.
+- Emits `CombatSettled` with the resolved combat style.
+- Emits `CombatConsumableUsed` when a Ranged arrow or Magic Rune Dust is burned.
 
 Contract fatal cycle:
 
@@ -979,6 +1046,8 @@ Contract equipment:
 - Unequipping mints it back.
 - Death clears equipped state without minting back, so gear is lost.
 - This prevents transfer-while-equipped exploits.
+- Weapon combat stats are exposed through `IdleIslesContent.weaponStatsOf(itemId)`, returning style, weapon damage, and weapon accuracy. The core contract reads the equipped weapon's stats for combat style, speed adjustment, and accuracy.
+- Bows are normal weapon-slot equipment. Ranged settlement burns one arrow per completed ranged cycle, choosing the highest available arrow tier first. Magic settlement currently burns Rune Dust as the placeholder rune item.
 - The production design intentionally avoids admin item faucets. Equipment-loss tests should get gear through real onchain crafting/drop flows once those are implemented, not through privileged minting.
 - A burn-address transfer is not preferred for death loss. `_burn`/non-remint semantics are simpler for supply and ownership accounting because the item is destroyed rather than left as a balance at `0x...dead`.
 
@@ -1087,18 +1156,28 @@ Latest contract build verification:
 npm.cmd run build:contracts
 ```
 
-Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the packed Gather/Artisan tables currently compile under the project bytecode budgets. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content. After extracting Hoard Hall, splitting settlement caps, and adding content-driven Gather settlement, deployed bytecode measures 22,759 bytes for `IdleIsles`, 10,762 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`.
+Result: passes with Solidity 0.8.28 and the optimized default Hardhat profile. The previous unoptimized bytecode-size deployment blocker is resolved for normal `hardhat build`, and the packed Gather/Artisan tables currently compile under the project bytecode budgets. Optimizer runs were lowered from 50 to 1 after the T2 slice to preserve bytecode room for gameplay content.
+
+Current bytecode budget check:
+
+```powershell
+npm.cmd run bytecode:contracts
+```
+
+Result: passes. Deployed bytecode currently measures 24,183 bytes for `IdleIsles`, 11,344 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`. `IdleIsles` has 17 bytes of project-budget headroom, and `IdleIslesContent` has 656 bytes of project-budget headroom.
 
 Latest full verification:
 
 ```powershell
 npm.cmd run build:contracts
+npm.cmd run bytecode:contracts
+npm.cmd run content:check
 npm.cmd run test:contracts
 npm.cmd run build
 npm.cmd run lint
 ```
 
-Result: all pass after the Hoard Hall extraction, settlement cap split, and content-driven Gather pass. Contract tests are at 25 passing Node test-runner tests. Deployed bytecode measures 22,759 bytes for `IdleIsles`, 10,762 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`.
+Result: `content:check`, `build:contracts`, `bytecode:contracts`, `test:contracts`, `build`, and `lint` pass after the Feather Hawk, training-style preference, Ranged arrow burn, and Magic Rune Dust consumption pass. `npm.cmd run build` still emits Vite's existing large-chunk warning.
 
 Initial contract test coverage:
 
@@ -1122,6 +1201,12 @@ Initial contract test coverage:
 - Cook Minnow consumes Raw Minnow, mints successful Cooked Minnow, destroys burned attempts, and grants Cooking XP for attempted cycles.
 - Cooked Minnow can heal HP and can be consumed by combat auto-eat.
 - Test deployment now mirrors production shape for gameplay by deploying `IdleIslesContent` first and passing its address to the `IdleIsles` constructor; marketplace tests also deploy `HoardHall` against the game contract.
+- Ranged item stats, Arrowtip/Bow/Arrow recipes, and the Cave Bat Feather drop are decoded from `IdleIslesContent`.
+- Equipping a bow auto-detects Ranged style and stops combat cleanly without arrows.
+- Feather Hawk content and starter-area accessibility are covered.
+- Explicit Attack preference overrides bow auto-detection.
+- Ranged settlement burns one highest-tier arrow per completed cycle.
+- Magic settlement burns Rune Dust and stops cleanly when Rune Dust is missing.
 
 Latest contract test verification:
 
@@ -1129,11 +1214,11 @@ Latest contract test verification:
 npm.cmd run test:contracts
 ```
 
-Result: passes with 25 Node test-runner tests.
+Result: passes with 31 Node test-runner tests.
 
 Tooling note: after adding the expanded tests, the first rerun was blocked before test execution by a Windows `EPERM` rename failure in Hardhat's generated `cache/compile-cache.json` file. `npx.cmd hardhat clean` was run to clear generated cache/artifact state before rerunning the normal test script.
 
-Current result: passes with 25 Node test-runner tests, including area gates/travel guards, starter gather/artisan, packed expanded Gather and Artisan decoding, content-driven Pine Stand settlement, Bark Leggings, Craft Leather Cowl, Hoard Hall approval/escrow/fill/cancel paths, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, thousand-cycle cooking settlement, combat safety toggling, equipment burn/remint, and combat death gear/Crown loss.
+Current result: passes with 31 Node test-runner tests, including area gates/travel guards, starter gather/artisan, packed expanded Gather and Artisan decoding, ranged recipe/stat/drop decoding, Feather Hawk content/access, explicit combat style preference, Ranged/Magic consumable settlement, no-ammo bow combat stop, content-driven Pine Stand settlement, Bark Leggings, Craft Leather Cowl, Hoard Hall approval/escrow/fill/cancel paths, T2 mining/smelting/Copper Dagger, fishing/cooking/healing/auto-eat, thousand-cycle cooking settlement, combat safety toggling, equipment burn/remint, and combat death gear/Crown loss.
 
 ## 23. Current Playable Alpha Status
 
@@ -1142,8 +1227,9 @@ Implemented locally:
 - Skills, XP, and level curve.
 - Hitpoints skill and current HP.
 - Gather tab with tiered woodcutting, fishing, and cleaned mining.
-- Combat tab with monster tiers, one boss, damage, death, and rare drops.
-- Artisan tab with smithing and cooking.
+- Combat tab with monster tiers, one boss, damage, death, rare drops, and onchain Melee/Ranged/Magic style routing.
+- Artisan tab with smithing, crafting, cooking, bow crafting, arrowtip smithing, and arrow crafting data.
+- Feathers, Arrowtips, Bows, and Arrows in the shared item/ID system.
 - Raw/cooked fish and burn chance.
 - Food eating.
 - Combat safety controls for auto-eat, stop-at HP, selected food, and max food per claim.
@@ -1157,7 +1243,7 @@ Implemented locally:
 
 Still needed:
 
-- Contract parity for gather/artisan/cooking.
+- More complete frontend presentation for ranged combat style, ammo status, and weapon accuracy.
 - Indexed chain market history and scalable market reads.
 - Broader frontend contract integration through a wallet client.
 - Stronger randomness strategy.

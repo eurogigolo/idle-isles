@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "start": "node scripts/serve-dist.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "audit": "npm audit",

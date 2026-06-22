@@ -40,6 +40,11 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     uint256 internal constant RUGGED_HIDE = 74;
     uint256 internal constant COBALT_SCALE = 75;
     uint256 internal constant WYRM_HIDE = 76;
+    uint256 internal constant FEATHER = 77;
+    uint16 internal constant BRONZE_ARROW = 130;
+    uint16 internal constant IRON_ARROW = 131;
+    uint16 internal constant STEEL_ARROW = 132;
+    uint16 internal constant TUNGSTEN_ARROW = 133;
 
     uint8 internal constant XP_RATE_MULTIPLIER = 2;
 
@@ -54,13 +59,22 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     uint16 internal constant ACTIVITY_GIANT_SPIDER = 109;
     uint16 internal constant ACTIVITY_DIRE_WOLF = 110;
     uint16 internal constant ACTIVITY_VENOMOUS_DRAKE = 111;
+    uint16 internal constant ACTIVITY_FEATHER_HAWK = 112;
     uint16 internal constant ACTIVITY_ASH_GROVE = 201;
     uint16 internal constant ACTIVITY_LAST_GATHER = 217;
     uint16 internal constant ACTIVITY_WOOD_ARMORY = 301;
     uint16 internal constant ACTIVITY_COPPER_SMELTER = 302;
     uint16 internal constant ACTIVITY_COPPER_DAGGER = 303;
     uint16 internal constant ACTIVITY_COOK_MINNOW = 304;
-    uint16 internal constant ACTIVITY_LAST_ARTISAN = 339;
+    uint16 internal constant ACTIVITY_TUNGSTEN_ARROWTIPS = 343;
+    uint16 internal constant ACTIVITY_IRONBARK_BOW = 347;
+    uint16 internal constant ACTIVITY_TUNGSTEN_ARROWS = 351;
+    uint16 internal constant ACTIVITY_LAST_ARTISAN = 351;
+
+    bytes internal constant COMBAT_REWARD_DATA =
+        hex"0000020000010046000004000801004600000800480100490000160000020046"
+        hex"000023000002004900003a000001004800008c00480400030000060000010049"
+        hex"00000c000001004a00002d000001004b00005a000001004c000004000001004d";
 
     uint8 internal constant AREA_STARTER = 1;
     uint8 internal constant AREA_OUTER_ISLES = 2;
@@ -82,7 +96,16 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         Mining,
         Smithing,
         Cooking,
-        Crafting
+        Crafting,
+        Ranged,
+        Magic
+    }
+
+    enum CombatStyle {
+        Auto,
+        Melee,
+        Ranged,
+        Magic
     }
 
     enum Slot {
@@ -120,6 +143,18 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         uint256 foodItemId;
     }
 
+    struct CombatCycleResult {
+        bool died;
+        bool stopped;
+        uint256 hpLost;
+    }
+
+    struct CombatSettleState {
+        uint256 hpLost;
+        uint256 cyclesSettled;
+        uint16 foodUsed;
+    }
+
     mapping(address => bool) public hasProfile;
     mapping(address => uint16) public currentHitpoints;
     mapping(address => uint8) public currentAreaId;
@@ -138,7 +173,8 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         address indexed player,
         uint16 indexed activityId,
         uint256 cycles,
-        uint256 hpLost
+        uint256 hpLost,
+        CombatStyle indexed style
     );
     event PlayerDied(
         address indexed player,
@@ -154,6 +190,7 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         uint8 rarity
     );
     event FoodEaten(address indexed player, uint256 indexed itemId, uint256 hpRestored);
+    event CombatConsumableUsed(address indexed player, uint16 indexed activityId, uint256 indexed itemId);
     event ItemEquipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
     event ItemUnequipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
     event AreaTraveled(address indexed player, uint8 indexed areaId, uint256 cost);
@@ -198,21 +235,28 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     }
 
     function startCombat(uint16 activityId) external nonReentrant {
-        if (!hasProfile[msg.sender]) revert NoProfile();
-        _settle(msg.sender, MAX_SETTLE_CYCLES);
+        _startCombat(msg.sender, activityId);
+    }
+
+    function _startCombat(address player, uint16 activityId) internal {
+        if (!hasProfile[player]) revert NoProfile();
+        _settle(player, MAX_SETTLE_CYCLES);
 
         IIdleIslesContent.CombatActivity memory activity = CONTENT.getCombatActivity(activityId);
-        _requireActivityArea(msg.sender, activityId);
-        if (currentHitpoints[msg.sender] == 0) revert NoHp();
-        if (levelOf(msg.sender, Skill.Attack) < activity.reqAttack) revert RequirementLow();
-        if (levelOf(msg.sender, Skill.Defence) < activity.reqDefence) revert RequirementLow();
-        if (levelOf(msg.sender, Skill.Hitpoints) < activity.reqHitpoints) revert RequirementLow();
+        CombatStyle resolvedStyle = _resolveCombatStyle(player);
+        _requireActivityArea(player, activityId);
+        if (currentHitpoints[player] == 0) revert NoHp();
+        if (levelOf(player, _combatSkillForStyle(resolvedStyle)) < activity.reqAttack) {
+            revert RequirementLow();
+        }
+        if (levelOf(player, Skill.Defence) < activity.reqDefence) revert RequirementLow();
+        if (levelOf(player, Skill.Hitpoints) < activity.reqHitpoints) revert RequirementLow();
 
         if (activity.requiredEquipment != 0) {
-            if (!_isEquipped(msg.sender, activity.requiredEquipment)) revert EquipmentRequired();
+            if (!_isEquipped(player, activity.requiredEquipment)) revert EquipmentRequired();
         }
 
-        _startTask(msg.sender, activityId);
+        _startTask(player, activityId);
     }
 
     function startGather(uint16 activityId) external nonReentrant {
@@ -330,6 +374,16 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         emit AutoSettleConfigured(msg.sender, address(0), 0);
     }
 
+    function combatStylePreference(address player) external view returns (CombatStyle) {
+        return _combatStylePreference(player);
+    }
+
+    function setCombatStylePreference(CombatStyle style) external {
+        unlockedAreaMask[msg.sender] =
+            (unlockedAreaMask[msg.sender] & 0x3f) |
+            (uint8(style) << 6);
+    }
+
     function eatFood(uint256 itemId) external nonReentrant {
         if (!hasProfile[msg.sender]) revert NoProfile();
         _settle(msg.sender, MAX_SETTLE_CYCLES);
@@ -414,8 +468,15 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         returns (uint32)
     {
         IIdleIslesContent.Stats memory stats = equipmentStats(player);
+        IIdleIslesContent.WeaponStats memory weaponStats = _equippedWeaponStats(player);
         uint256 bps = 10_000;
-        uint256 reduction = uint256(stats.speed) * 250 + uint256(stats.attack) * 120;
+        uint256 reduction =
+            uint256(stats.speed) *
+            250 +
+            uint256(stats.attack) *
+            120 +
+            uint256(weaponStats.accuracy) *
+            40;
 
         if (reduction > 3_200) {
             reduction = 3_200;
@@ -470,6 +531,18 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         stats.speed += itemStats.speed;
     }
 
+    function _equippedWeaponStats(
+        address player
+    ) internal view returns (IIdleIslesContent.WeaponStats memory stats) {
+        uint256 weaponId = equipment[player].weapon;
+        if (weaponId == 0) {
+            // Unarmed combat stays melee-capable for starter activities.
+            return IIdleIslesContent.WeaponStats(uint8(CombatStyle.Auto), 1, 0);
+        }
+
+        return CONTENT.weaponStatsOf(weaponId);
+    }
+
     function _settle(address player, uint16 cycleLimit) internal {
         uint16 activityId = activeTask[player].activityId;
         if (activityId == 0) {
@@ -505,37 +578,57 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
             return;
         }
 
-        uint256 hpLost;
-        uint256 cyclesSettled;
-        uint16 foodUsed;
+        _settleCombat(player, possibleCycles, cycleSeconds, activityId);
+    }
+
+    function _settleCombat(
+        address player,
+        uint256 possibleCycles,
+        uint32 cycleSeconds,
+        uint16 activityId
+    ) internal {
+        CombatSettleState memory state;
+        CombatStyle style = _resolveCombatStyle(player);
 
         for (uint256 i = 0; i < possibleCycles; i++) {
             (bool shouldContinue, uint16 nextFoodUsed) = _prepareCombatCycle(
                 player,
                 activityId,
-                foodUsed
+                state.foodUsed
             );
-            foodUsed = nextFoodUsed;
+            state.foodUsed = nextFoodUsed;
             if (!shouldContinue) {
                 break;
             }
 
-            (bool died, uint256 cycleHpLost) = _resolveCombatCycle(
+            CombatCycleResult memory result = _resolveCombatCycle(
                 player,
                 activityId,
-                cycleSeconds
+                cycleSeconds,
+                style
             );
-            hpLost += cycleHpLost;
 
-            if (died) {
+            if (result.stopped) {
                 break;
             }
 
-            cyclesSettled++;
+            state.hpLost += result.hpLost;
+
+            if (result.died) {
+                break;
+            }
+
+            state.cyclesSettled++;
         }
 
-        if (cyclesSettled > 0 || hpLost > 0) {
-            emit CombatSettled(player, activityId, cyclesSettled, hpLost);
+        if (state.cyclesSettled > 0 || state.hpLost > 0) {
+            emit CombatSettled(
+                player,
+                activityId,
+                state.cyclesSettled,
+                state.hpLost,
+                style
+            );
         }
     }
 
@@ -544,6 +637,30 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
             return MAX_COMBAT_SETTLE_CYCLES;
         }
         return MAX_SETTLE_CYCLES;
+    }
+
+    function _resolveCombatStyle(address player) internal view returns (CombatStyle) {
+        CombatStyle preference = _combatStylePreference(player);
+        if (preference != CombatStyle.Auto) return preference;
+
+        uint8 weaponStyle = _equippedWeaponStats(player).style;
+        if (weaponStyle == uint8(CombatStyle.Ranged)) return CombatStyle.Ranged;
+        if (weaponStyle == uint8(CombatStyle.Magic)) return CombatStyle.Magic;
+        return CombatStyle.Melee;
+    }
+
+    function _combatStylePreference(address player) internal view returns (CombatStyle) {
+        return CombatStyle(unlockedAreaMask[player] >> 6);
+    }
+
+    function _combatSkillForStyle(CombatStyle style) internal pure returns (Skill) {
+        if (style == CombatStyle.Ranged) {
+            return Skill.Ranged;
+        }
+        if (style == CombatStyle.Magic) {
+            return Skill.Magic;
+        }
+        return Skill.Attack;
     }
 
     function _startTask(address player, uint16 activityId) internal {
@@ -578,7 +695,7 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     }
 
     function _isCombatActivity(uint16 activityId) internal pure returns (bool) {
-        return activityId >= ACTIVITY_TRAINING_YARD && activityId <= ACTIVITY_VENOMOUS_DRAKE;
+        return activityId >= ACTIVITY_TRAINING_YARD && activityId <= ACTIVITY_FEATHER_HAWK;
     }
 
     function _isGatherActivity(uint16 activityId) internal pure returns (bool) {
@@ -603,7 +720,10 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
             (activityId >= 211 && activityId <= 214) ||
             (activityId >= 216 && activityId <= ACTIVITY_LAST_GATHER) ||
             (activityId >= 316 && activityId <= 319) ||
-            (activityId >= 329 && activityId <= 334)
+            (activityId >= 329 && activityId <= 334) ||
+            activityId == ACTIVITY_TUNGSTEN_ARROWTIPS ||
+            activityId == ACTIVITY_IRONBARK_BOW ||
+            activityId == ACTIVITY_TUNGSTEN_ARROWS
         ) {
             return AREA_OUTER_ISLES;
         }
@@ -777,28 +897,44 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     function _resolveCombatCycle(
         address player,
         uint16 activityId,
-        uint32 cycleSeconds
-    ) internal returns (bool died, uint256 hpLost) {
+        uint32 cycleSeconds,
+        CombatStyle style
+    ) internal returns (CombatCycleResult memory result) {
         IIdleIslesContent.CombatActivity memory activity = CONTENT.getCombatActivity(activityId);
         ActiveTask storage task = activeTask[player];
         uint256 cycleIndex = (task.lastResolvedAt - task.startedAt) / cycleSeconds;
+
+        if (!_consumeAmmoForStyle(player, activityId, style)) {
+            _stopActivity(
+                player,
+                activityId,
+                style == CombatStyle.Magic ? "NO_RUNE" : "NO_AMMO"
+            );
+            result.stopped = true;
+            return result;
+        }
+
         uint256 damage = _combatDamage(player, activity, cycleIndex);
 
         if (damage > 0 && currentHitpoints[player] <= damage) {
-            hpLost = currentHitpoints[player];
+            result.hpLost = currentHitpoints[player];
             currentHitpoints[player] = 0;
             _applyDeathPenalty(player, activity.activityId);
-            return (true, hpLost);
+            result.died = true;
+            return result;
         }
 
         if (damage > 0) {
             currentHitpoints[player] -= uint16(damage);
-            hpLost = damage;
+            result.hpLost = damage;
         }
 
-        _grantCombatCycle(player, activity, cycleIndex);
+        if (_combatHit(player, activity, cycleIndex, style)) {
+            _grantCombatCycle(player, activity, cycleIndex, style);
+        }
+
         task.lastResolvedAt += cycleSeconds;
-        return (false, hpLost);
+        return result;
     }
 
     function _prepareCombatCycle(
@@ -837,51 +973,22 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
     function _grantCombatCycle(
         address player,
         IIdleIslesContent.CombatActivity memory activity,
-        uint256 cycleIndex
+        uint256 cycleIndex,
+        CombatStyle style
     ) internal {
-        _grantSkillXp(player, Skill.Attack, activity.xpAttack);
+        _grantSkillXp(player, _combatSkillForStyle(style), activity.xpAttack);
         _grantSkillXp(player, Skill.Defence, activity.xpDefence);
         _grantSkillXp(player, Skill.Hitpoints, activity.xpHitpoints);
 
-        if (activity.activityId == ACTIVITY_TRAINING_YARD) {
-            _mint(player, HIDE, 1, "");
-            _mint(player, CROWNS, 2, "");
-        } else if (activity.activityId == ACTIVITY_FIELD_RAT) {
-            _mint(player, HIDE, 1, "");
-            _mint(player, CROWNS, 4, "");
-            _mint(player, RAW_MINNOW, 1, "");
-        } else if (activity.activityId == ACTIVITY_MOSS_CAMP) {
-            _mint(player, THICK_HIDE, 1, "");
-            _mint(player, CROWNS, 8, "");
-            _mint(player, RUNE_DUST, 1, "");
-        } else if (activity.activityId == ACTIVITY_GOBLIN_FORAGER) {
-            _mint(player, THICK_HIDE, 1, "");
-            _mint(player, CROWNS, 6, "");
-        } else if (activity.activityId == ACTIVITY_GIANT_SPIDER) {
-            _mint(player, RUGGED_HIDE, 1, "");
-            _mint(player, CROWNS, 12, "");
-        } else if (activity.activityId == ACTIVITY_DIRE_WOLF) {
-            _mint(player, COBALT_SCALE, 1, "");
-            _mint(player, CROWNS, 45, "");
-        } else if (activity.activityId == ACTIVITY_VENOMOUS_DRAKE) {
-            _mint(player, WYRM_HIDE, 1, "");
-            _mint(player, CROWNS, 90, "");
-        } else if (activity.activityId == ACTIVITY_CAVE_BAT) {
-            _mint(player, HIDE, 2, "");
-            _mint(player, CROWNS, 22, "");
-        } else if (activity.activityId == ACTIVITY_BANDIT_SCOUT) {
-            _mint(player, THICK_HIDE, 2, "");
-            _mint(player, CROWNS, 35, "");
-        } else if (activity.activityId == ACTIVITY_CRYPT_KNIGHT) {
-            _mint(player, CROWNS, 58, "");
-            _mint(player, RUNE_DUST, 1, "");
-        } else if (activity.activityId == ACTIVITY_HOLLOW_TREANT) {
-            _mint(player, CROWNS, 140, "");
-            _mint(player, PINE_LOG, 4, "");
-            _mint(player, RUNE_DUST, 1, "");
-        } else {
-            _mint(player, CROWNS, 22, "");
-        }
+        uint256 rewardConfig = _combatRewardConfig(activity.activityId);
+        uint256 rewardItem = uint16(rewardConfig);
+        uint256 rewardAmount = uint8(rewardConfig >> 16);
+        uint256 extraItem = uint16(rewardConfig >> 24);
+        uint256 crowns = uint16(rewardConfig >> 40);
+
+        if (rewardItem != 0) _mint(player, rewardItem, rewardAmount, "");
+        if (extraItem != 0) _mint(player, extraItem, 1, "");
+        if (crowns != 0) _mint(player, CROWNS, crowns, "");
 
         for (uint8 i = 0; i < 4; i++) {
             IIdleIslesContent.Drop memory drop = CONTENT.getDrop(activity.activityId, i);
@@ -893,6 +1000,15 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
                 _mint(player, drop.itemId, drop.amount, "");
                 emit RareDrop(player, activity.activityId, drop.itemId, drop.amount, drop.rarity);
             }
+        }
+    }
+
+    function _combatRewardConfig(uint16 activityId) internal pure returns (uint256 config) {
+        uint256 offset = uint256(activityId - ACTIVITY_TRAINING_YARD) * 8;
+        bytes memory data = COMBAT_REWARD_DATA;
+
+        assembly {
+            config := shr(192, mload(add(add(data, 0x20), offset)))
         }
     }
 
@@ -922,6 +1038,73 @@ contract IdleIsles is ERC1155, ReentrancyGuard {
         }
 
         return rawDamage - mitigation;
+    }
+
+    function _combatHit(
+        address player,
+        IIdleIslesContent.CombatActivity memory activity,
+        uint256 cycleIndex,
+        CombatStyle style
+    ) internal view returns (bool) {
+        return _rollBps(player, cycleIndex, 89) < _combatAccuracyBps(player, activity, style);
+    }
+
+    function _combatAccuracyBps(
+        address player,
+        IIdleIslesContent.CombatActivity memory activity,
+        CombatStyle style
+    ) internal view returns (uint256) {
+        if (activity.activityId == ACTIVITY_TRAINING_YARD) {
+            return 10_000;
+        }
+
+        IIdleIslesContent.WeaponStats memory weaponStats = _equippedWeaponStats(player);
+        uint256 weaponDamage = weaponStats.damage == 0 ? 1 : weaponStats.damage;
+        uint256 skillLevel = levelOf(player, _combatSkillForStyle(style));
+        uint256 offence =
+            skillLevel *
+            120 +
+            uint256(weaponStats.accuracy) *
+            75 +
+            (weaponDamage + (skillLevel - 1) / 12) *
+            40 +
+            100;
+        uint256 monsterDefence = uint256(activity.reqDefence) * 100 + 100;
+        uint256 chance = 1_500 + (offence * 8_000) / (offence + monsterDefence);
+
+        return chance > 9_800 ? 9_800 : chance;
+    }
+
+    function _consumeAmmoForStyle(
+        address player,
+        uint16 activityId,
+        CombatStyle style
+    ) internal returns (bool) {
+        uint256 itemId;
+
+        if (style == CombatStyle.Ranged) {
+            itemId = _selectAmmunition(player);
+        } else if (style == CombatStyle.Magic) {
+            itemId = balanceOf(player, RUNE_DUST) > 0 ? RUNE_DUST : 0;
+        } else {
+            return true;
+        }
+
+        if (itemId == 0) {
+            return false;
+        }
+
+        _burn(player, itemId, 1);
+        emit CombatConsumableUsed(player, activityId, itemId);
+        return true;
+    }
+
+    function _selectAmmunition(address player) internal view returns (uint256) {
+        if (balanceOf(player, TUNGSTEN_ARROW) > 0) return TUNGSTEN_ARROW;
+        if (balanceOf(player, STEEL_ARROW) > 0) return STEEL_ARROW;
+        if (balanceOf(player, IRON_ARROW) > 0) return IRON_ARROW;
+        if (balanceOf(player, BRONZE_ARROW) > 0) return BRONZE_ARROW;
+        return 0;
     }
 
     function _rollBps(address player, uint256 cycleIndex, uint256 salt)

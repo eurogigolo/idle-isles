@@ -9,6 +9,13 @@ interface IIdleIslesContent {
         uint16 speed;
     }
 
+    struct WeaponStats {
+        // 0 = none/auto fallback, 1 = melee, 2 = ranged, 3 = magic.
+        uint8 style;
+        uint16 damage;
+        uint16 accuracy;
+    }
+
     struct CombatActivity {
         uint16 activityId;
         uint32 cycleSeconds;
@@ -34,6 +41,7 @@ interface IIdleIslesContent {
 
     function itemSlot(uint256 itemId) external pure returns (bool equippable, uint8 slot);
     function itemStatsOf(uint256 itemId) external pure returns (Stats memory stats);
+    function weaponStatsOf(uint256 itemId) external pure returns (WeaponStats memory stats);
     function healAmount(uint256 itemId) external pure returns (uint16);
     function getGatherActivity(uint16 activityId) external pure returns (uint256 config);
     function getArtisanActivity(uint16 activityId)

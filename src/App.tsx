@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   Axe,
   CircleDollarSign,
@@ -38,6 +39,7 @@ import {
   type ActivityId,
   type AreaId,
   type ClaimPreview,
+  type CombatTrainingStyle,
   type GameState,
   type ItemId,
   ITEMS,
@@ -106,10 +108,12 @@ import {
   writeMossCreateProfile,
   writeMossEatFood,
   writeMossEquip,
+  writeMossSetCombatStylePreference,
   writeMossStartActivity,
   writeMossTravelToArea,
   writeMossUnequip,
   writeStartActivity,
+  writeSetCombatStylePreference,
   writeTravelToArea,
   writeUnequip,
 } from './chain'
@@ -132,6 +136,8 @@ const SKILL_ICONS: Record<SkillId, LucideIcon> = {
   smithing: Hammer,
   cooking: Flame,
   crafting: Package,
+  ranged: Swords,
+  magic: Sparkles,
 }
 
 const ITEM_ICONS: Record<ItemId, LucideIcon> = {
@@ -191,6 +197,19 @@ const ITEM_ICONS: Record<ItemId, LucideIcon> = {
   ruggedHide: Package,
   cobaltScale: Gem,
   wyrmHide: Package,
+  feather: Package,
+  bronzeArrowtips: Hammer,
+  ironArrowtips: Hammer,
+  steelArrowtips: Hammer,
+  tungstenArrowtips: Hammer,
+  ashBow: Swords,
+  pineBow: Swords,
+  oakBow: Swords,
+  ironbarkBow: Swords,
+  bronzeArrow: Swords,
+  ironArrow: Swords,
+  steelArrow: Swords,
+  tungstenArrow: Swords,
   leatherCowl: Shield,
   leatherBody: Shield,
   leatherChaps: Shield,
@@ -212,6 +231,11 @@ const ITEM_ICONS: Record<ItemId, LucideIcon> = {
 
 type ActivitySubtabGroup = Extract<ActivityGroup, 'Gather' | 'Artisan'>
 type WalletMode = 'injected' | 'moss'
+type PendingAction = {
+  title: string
+  detail: string
+}
+
 const RESOURCE_GROUPS: ActivitySubtabGroup[] = ['Gather', 'Artisan']
 const ACTIVITY_SUBTABS: Record<ActivitySubtabGroup, SkillId[]> = {
   Gather: ['woodcutting', 'fishing', 'mining'],
@@ -220,6 +244,12 @@ const ACTIVITY_SUBTABS: Record<ActivitySubtabGroup, SkillId[]> = {
 const SKILL_NAMES = Object.fromEntries(
   SKILLS.map((skill) => [skill.id, skill.name]),
 ) as Record<SkillId, string>
+const COMBAT_STYLE_OPTIONS: Array<{ id: CombatTrainingStyle; label: string }> = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'attack', label: 'Attack' },
+  { id: 'ranged', label: 'Ranged' },
+  { id: 'magic', label: 'Magic' },
+]
 const BOOT_TIME = Date.now()
 type PlayMode = 'local' | 'chain'
 const AFK_NOTIFICATION_MS = 5 * 60 * 1000
@@ -288,6 +318,7 @@ function App() {
   const [chainSnapshot, setChainSnapshot] = useState<ChainSnapshot | null>(null)
   const [chainLoading, setChainLoading] = useState(false)
   const [chainBusy, setChainBusy] = useState(false)
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
   const [marketFilter, setMarketFilter] = useState<MarketCategory>('All')
   const [selectedMarketItem, setSelectedMarketItem] = useState<ItemId | null>(null)
   const [listingItem, setListingItem] = useState<ItemId | ''>('')
@@ -378,6 +409,9 @@ function App() {
     mossSessionReady,
     walletMode,
   })
+  const showPendingActionPopup =
+    Boolean(pendingAction) &&
+    (chainBusy || walletNote === 'Opening wallet' || walletNote === 'Opening MOSS')
 
   useEffect(() => {
     gameRef.current = game
@@ -611,6 +645,12 @@ function App() {
     setGame((current) => pushLog(message, current))
   }
 
+  function showPendingAction(action: PendingAction) {
+    flushSync(() => {
+      setPendingAction(action)
+    })
+  }
+
   function selectPlayMode(nextMode: PlayMode) {
     setPlayMode(nextMode)
 
@@ -713,6 +753,12 @@ function App() {
       setWalletNote(mossSessionReady ? 'Sending with MOSS' : 'Confirm in MOSS')
 
       try {
+        showPendingAction({
+          title: mossSessionReady ? 'Sending with MOSS' : 'Opening MOSS',
+          detail: mossSessionReady
+            ? 'Submitting your onchain action with your active gameplay session.'
+            : 'Approve the transaction when the MOSS prompt appears.',
+        })
         await options.mossAction(account)
         setWalletNote(successMessage)
         pushChainLog(successMessage)
@@ -723,6 +769,7 @@ function App() {
         setWalletNote(message)
         pushChainLog(message)
       } finally {
+        setPendingAction(null)
         setChainBusy(false)
       }
       return
@@ -759,6 +806,10 @@ function App() {
     setWalletNote('Confirm transaction')
 
     try {
+      showPendingAction({
+        title: 'Opening wallet',
+        detail: 'Confirm the transaction when your wallet prompt appears.',
+      })
       await action(window.ethereum, account)
       setWalletNote(successMessage)
       pushChainLog(successMessage)
@@ -768,6 +819,7 @@ function App() {
       setWalletNote(message)
       pushChainLog(message)
     } finally {
+      setPendingAction(null)
       setChainBusy(false)
     }
   }
@@ -788,7 +840,8 @@ function App() {
         if (
           result.preview.cycles === 0 &&
           !result.preview.stoppedByHp &&
-          !result.preview.stoppedBySafety
+          !result.preview.stoppedBySafety &&
+          !result.preview.stoppedBySupply
         ) {
           return current
         }
@@ -824,7 +877,11 @@ function App() {
     setGame((current) => {
       const result = applyClaim(current, Date.now())
       if (result.preview.cycles === 0) {
-        if (result.preview.stoppedByHp || result.preview.stoppedBySafety) {
+        if (
+          result.preview.stoppedByHp ||
+          result.preview.stoppedBySafety ||
+          result.preview.stoppedBySupply
+        ) {
           return pushLog(`Combat resolved ${summarizePreview(result.preview)}.`, result.state)
         }
 
@@ -836,13 +893,41 @@ function App() {
   }
 
   function updateCombatSettings(settings: Partial<GameState['combatSettings']>) {
-    setGame((current) => ({
-      ...current,
-      combatSettings: {
-        ...current.combatSettings,
-        ...settings,
+    setGame((current) => {
+      const next = {
+        ...current,
+        combatSettings: {
+          ...current.combatSettings,
+          ...settings,
+        },
+      }
+
+      if (
+        typeof settings.autoEat === 'boolean' &&
+        settings.autoEat !== current.combatSettings.autoEat
+      ) {
+        return pushLog(settings.autoEat ? 'Auto-eat enabled.' : 'Auto-eat disabled.', next)
+      }
+
+      return next
+    })
+  }
+
+  async function changeCombatTrainingStyle(style: CombatTrainingStyle) {
+    updateCombatSettings({ trainingStyle: style })
+
+    if (!isChainMode) {
+      return
+    }
+
+    const label = COMBAT_STYLE_OPTIONS.find((option) => option.id === style)?.label ?? 'Auto'
+    await runChainTransaction(
+      (provider, activeAccount) => writeSetCombatStylePreference(provider, activeAccount, style),
+      `Combat training set to ${label}.`,
+      {
+        mossAction: () => writeMossSetCombatStylePreference(style),
       },
-    }))
+    )
   }
 
   async function saveChainCombatSafety() {
@@ -858,7 +943,7 @@ function App() {
     if (!settings.autoEat) {
       await runChainTransaction(
         (provider, activeAccount) => writeClearCombatSafety(provider, activeAccount),
-        'Auto-eat disabled. Combat can now continue past Stop HP.',
+        'Chain auto-eat disabled.',
         {
           mossAction: () => writeMossClearCombatSafety(),
         },
@@ -877,7 +962,7 @@ function App() {
           foodItemId: settings.foodItemId,
           maxFoodPerSettle: settings.maxFoodPerClaim,
         }),
-      'Chain safety saved.',
+      'Chain auto-eat enabled.',
       {
         mossAction: () =>
           writeMossConfigureCombatSafety({
@@ -1219,6 +1304,11 @@ function App() {
   async function connectWallet() {
     if (walletMode === 'moss') {
       try {
+        setWalletNote('Opening MOSS')
+        showPendingAction({
+          title: 'Opening MOSS',
+          detail: 'Connect your MOSS wallet in the popup.',
+        })
         const address = await connectMossWallet()
         if (!address) {
           setWalletNote('MOSS connection cancelled')
@@ -1231,6 +1321,8 @@ function App() {
         setWalletNote('MOSS linked')
       } catch (error) {
         setWalletNote(formatChainError(error))
+      } finally {
+        setPendingAction(null)
       }
       return
     }
@@ -1241,6 +1333,11 @@ function App() {
     }
 
     try {
+      setWalletNote('Opening wallet')
+      showPendingAction({
+        title: 'Opening wallet',
+        detail: 'Connect your wallet when the prompt appears.',
+      })
       const accounts = (await window.ethereum.request({
         method: 'eth_requestAccounts',
       })) as string[]
@@ -1253,6 +1350,8 @@ function App() {
       setWalletNote('Wallet linked')
     } catch {
       setWalletNote('Wallet rejected')
+    } finally {
+      setPendingAction(null)
     }
   }
 
@@ -1269,6 +1368,11 @@ function App() {
     }
 
     try {
+      setWalletNote('Opening wallet')
+      showPendingAction({
+        title: 'Opening wallet',
+        detail: 'Approve MegaETH Testnet when your wallet prompt appears.',
+      })
       await window.ethereum.request({
         method: 'wallet_addEthereumChain',
         params: [MEGAETH_TESTNET_PARAMS],
@@ -1277,6 +1381,8 @@ function App() {
       setWalletNote('MegaETH selected')
     } catch {
       setWalletNote('Network request rejected')
+    } finally {
+      setPendingAction(null)
     }
   }
 
@@ -1300,15 +1406,22 @@ function App() {
     setWalletNote('Approve MOSS gameplay session')
 
     try {
+      showPendingAction({
+        title: 'Opening MOSS',
+        detail: 'Approve the 24-hour gameplay session in MOSS.',
+      })
       await grantMossGameplaySession()
       setMossSessionReady(await hasMossGameplaySession(account))
-      setWalletNote(`MOSS gameplay session ready for ${formatDuration(MOSS_GAMEPLAY_SESSION_SECONDS * 1000)}`)
+      setWalletNote(
+        `MOSS gameplay session ready for ${formatDuration(MOSS_GAMEPLAY_SESSION_SECONDS * 1000)}`,
+      )
       pushChainLog('MOSS gameplay session approved.')
     } catch (error) {
       const message = formatChainError(error)
       setWalletNote(message)
       pushChainLog(message)
     } finally {
+      setPendingAction(null)
       setChainBusy(false)
     }
   }
@@ -1590,6 +1703,32 @@ function App() {
                   <CircleDollarSign size={18} />
                   <span>Claim</span>
                 </button>
+              </div>
+
+              <div className="combat-style-control">
+                <div className="combat-style-label">
+                  <span>Training</span>
+                  <strong>
+                    {COMBAT_STYLE_OPTIONS.find(
+                      (option) => option.id === displayGame.combatSettings.trainingStyle,
+                    )?.label ?? 'Auto'}
+                  </strong>
+                </div>
+                <div className="segmented combat-style-segmented">
+                  {COMBAT_STYLE_OPTIONS.map((option) => (
+                    <button
+                      type="button"
+                      className={
+                        displayGame.combatSettings.trainingStyle === option.id ? 'selected' : ''
+                      }
+                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
+                      onClick={() => void changeCombatTrainingStyle(option.id)}
+                      key={option.id}
+                    >
+                      <span>{option.label}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div className="activity-list combat-list">
@@ -2012,7 +2151,21 @@ function App() {
           onClose={() => setWelcomeBackReport(null)}
         />
       )}
+
+      {showPendingActionPopup && pendingAction && <PendingActionPopup action={pendingAction} />}
     </main>
+  )
+}
+
+function PendingActionPopup({ action }: { action: PendingAction }) {
+  return (
+    <div className="pending-action-popup" role="status" aria-live="polite">
+      <span className="pending-action-spinner" aria-hidden="true" />
+      <span>
+        <strong>{action.title}</strong>
+        <em>{action.detail}</em>
+      </span>
+    </div>
   )
 }
 
@@ -2172,6 +2325,11 @@ function createWelcomeBackReport(
     lines.push({ tone: 'danger', text: 'Combat stopped because your HP hit 0' })
   } else if (preview.stoppedBySafety) {
     lines.push({ tone: 'warn', text: 'Combat stopped at your auto-eat safety threshold' })
+  } else if (preview.stoppedBySupply) {
+    lines.push({
+      tone: 'warn',
+      text: `Combat stopped: no ${ITEMS[preview.stoppedBySupply].name}`,
+    })
   }
 
   if (lines.length === 0) {
@@ -2475,6 +2633,10 @@ function gameFromChainSnapshot(snapshot: ChainSnapshot, fallback: GameState): Ga
     inventory: snapshot.inventory,
     equipment: snapshot.equipment,
     marketOrders: snapshot.marketOrders,
+    combatSettings: {
+      ...fallback.combatSettings,
+      trainingStyle: snapshot.combatStylePreference,
+    },
     currentHitpoints: snapshot.currentHitpoints,
     currentAreaId: snapshot.currentAreaId,
     unlockedAreaIds: snapshot.unlockedAreaIds,
@@ -2503,6 +2665,7 @@ function getChainPreview(
     burned: {},
     rareDrops: {},
     autoEaten: {},
+    stoppedBySupply: null,
     hpRestored: 0,
     hpLost: 0,
     stoppedByHp: false,

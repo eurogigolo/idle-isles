@@ -24,6 +24,7 @@ import {
   STARTER_AREA_ID,
   type ActivityId,
   type AreaId,
+  type CombatTrainingStyle,
   type Equipment,
   type Inventory,
   type ItemId,
@@ -52,6 +53,7 @@ export interface ChainSnapshot {
     lastClaimAt: number
   } | null
   pendingCycles: number
+  combatStylePreference: CombatTrainingStyle
 }
 
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
@@ -83,6 +85,7 @@ const MOSS_GAMEPLAY_CALLS = [
   'unequip(uint8)',
   'configureAutoSettle(address,uint64,uint16,uint16,bool,uint16,uint256)',
   'clearAutoSettle()',
+  'setCombatStylePreference(uint8)',
 ] as const
 
 let mossInitialisePromise: Promise<void> | null = null
@@ -143,6 +146,7 @@ const idleIslesAbi = parseAbi([
   'function balanceOf(address account, uint256 id) view returns (uint256)',
   'function claim()',
   'function clearAutoSettle()',
+  'function combatStylePreference(address player) view returns (uint8)',
   'function configureAutoSettle(address operator, uint64 expiresAt, uint16 maxCyclesPerSettle, uint16 stopAtHp, bool autoEat, uint16 maxFoodPerSettle, uint256 foodItemId)',
   'function createProfile()',
   'function currentAreaId(address player) view returns (uint8)',
@@ -158,6 +162,7 @@ const idleIslesAbi = parseAbi([
   'function startArtisan(uint16 activityId)',
   'function startCombat(uint16 activityId)',
   'function startGather(uint16 activityId)',
+  'function setCombatStylePreference(uint8 style)',
   'function travelToArea(uint8 areaId)',
   'function unequip(uint8 slot)',
 ])
@@ -196,6 +201,7 @@ type IdleIslesWriteRequest =
   | { functionName: 'startArtisan'; args: readonly [activityId: number] }
   | { functionName: 'startCombat'; args: readonly [activityId: number] }
   | { functionName: 'startGather'; args: readonly [activityId: number] }
+  | { functionName: 'setCombatStylePreference'; args: readonly [style: number] }
   | { functionName: 'travelToArea'; args: readonly [areaId: number] }
   | { functionName: 'unequip'; args: readonly [slot: number] }
 
@@ -321,6 +327,7 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
       unlockedAreaIds: [STARTER_AREA_ID],
       active: null,
       pendingCycles: 0,
+      combatStylePreference: 'auto',
     }
   }
 
@@ -334,6 +341,7 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
     skillValues,
     balances,
     equippedValues,
+    combatStyleValue,
   ] = await Promise.all([
     publicClient.readContract({
       address,
@@ -405,6 +413,12 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
         }),
       ),
     ),
+    publicClient.readContract({
+      address,
+      abi: idleIslesAbi,
+      functionName: 'combatStylePreference',
+      args: [account],
+    }),
   ])
 
   return {
@@ -428,6 +442,7 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
     unlockedAreaIds: formatUnlockedAreas(areaUnlockedValues),
     active: formatActiveTask(activeTask),
     pendingCycles: Number(pendingCycles),
+    combatStylePreference: formatCombatStylePreference(combatStyleValue),
   }
 }
 
@@ -540,6 +555,17 @@ export async function writeConfigureCombatSafety(
 
 export async function writeClearCombatSafety(provider: BrowserEthereumProvider, account: Address) {
   return writeIdleIslesContract(provider, account, { functionName: 'clearAutoSettle', args: [] })
+}
+
+export async function writeSetCombatStylePreference(
+  provider: BrowserEthereumProvider,
+  account: Address,
+  style: CombatTrainingStyle,
+) {
+  return writeIdleIslesContract(provider, account, {
+    functionName: 'setCombatStylePreference',
+    args: [getContractCombatStyle(style)],
+  })
 }
 
 export async function writeTravelToArea(
@@ -686,6 +712,13 @@ export async function writeMossClearCombatSafety() {
   return writeMossIdleIslesContract({ functionName: 'clearAutoSettle', args: [] })
 }
 
+export async function writeMossSetCombatStylePreference(style: CombatTrainingStyle) {
+  return writeMossIdleIslesContract({
+    functionName: 'setCombatStylePreference',
+    args: [getContractCombatStyle(style)],
+  })
+}
+
 export async function writeMossTravelToArea(areaId: AreaId) {
   return writeMossIdleIslesContract(
     {
@@ -786,6 +819,34 @@ function formatUnlockedAreas(areaUnlockedValues: readonly boolean[]): AreaId[] {
   return unlockedAreaIds.includes(STARTER_AREA_ID)
     ? unlockedAreaIds
     : [STARTER_AREA_ID, ...unlockedAreaIds]
+}
+
+function formatCombatStylePreference(value: number): CombatTrainingStyle {
+  if (value === 2) {
+    return 'ranged'
+  }
+  if (value === 3) {
+    return 'magic'
+  }
+  if (value === 1) {
+    return 'attack'
+  }
+
+  return 'auto'
+}
+
+function getContractCombatStyle(style: CombatTrainingStyle): number {
+  if (style === 'ranged') {
+    return 2
+  }
+  if (style === 'magic') {
+    return 3
+  }
+  if (style === 'attack') {
+    return 1
+  }
+
+  return 0
 }
 
 async function readChainMarketOrders(

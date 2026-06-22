@@ -8,6 +8,8 @@ export type SkillId =
   | 'smithing'
   | 'cooking'
   | 'crafting'
+  | 'ranged'
+  | 'magic'
 
 export type ItemId =
   | 'crowns'
@@ -66,6 +68,19 @@ export type ItemId =
   | 'ruggedHide'
   | 'cobaltScale'
   | 'wyrmHide'
+  | 'feather'
+  | 'bronzeArrowtips'
+  | 'ironArrowtips'
+  | 'steelArrowtips'
+  | 'tungstenArrowtips'
+  | 'ashBow'
+  | 'pineBow'
+  | 'oakBow'
+  | 'ironbarkBow'
+  | 'bronzeArrow'
+  | 'ironArrow'
+  | 'steelArrow'
+  | 'tungstenArrow'
   | 'leatherCowl'
   | 'leatherBody'
   | 'leatherChaps'
@@ -107,6 +122,7 @@ export type ActivityId =
   | 'trainingYard'
   | 'fieldRat'
   | 'mossCamp'
+  | 'featherHawk'
   | 'goblinForager'
   | 'giantSpider'
   | 'direWolf'
@@ -133,6 +149,18 @@ export type ActivityId =
   | 'tungstenArmory'
   | 'tungstenArmorForge'
   | 'tungstenLegsForge'
+  | 'bronzeArrowtipsForge'
+  | 'ironArrowtipsForge'
+  | 'steelArrowtipsForge'
+  | 'tungstenArrowtipsForge'
+  | 'craftAshBow'
+  | 'craftPineBow'
+  | 'craftOakBow'
+  | 'craftIronbarkBow'
+  | 'craftBronzeArrows'
+  | 'craftIronArrows'
+  | 'craftSteelArrows'
+  | 'craftTungstenArrows'
   | 'craftLeatherCowl'
   | 'craftLeatherChaps'
   | 'craftLeatherBody'
@@ -161,6 +189,7 @@ export type MarketSeller = 'Realm' | 'Player' | 'Trader'
 export type MarketSide = 'buy' | 'sell'
 export type MarketCategory = 'All' | 'Resources' | 'Materials' | 'Food' | 'Equipment' | 'Rare'
 export type AreaId = 'starterArea' | 'outerIsles'
+export type CombatTrainingStyle = 'auto' | 'attack' | 'ranged' | 'magic'
 
 export type Inventory = Record<ItemId, number>
 export type SkillBook = Record<SkillId, { xp: number }>
@@ -181,6 +210,7 @@ export interface CombatSettings {
   stopAtHitpoints: number
   foodItemId: ItemId | null
   maxFoodPerClaim: number
+  trainingStyle: CombatTrainingStyle
 }
 
 export interface GameState {
@@ -285,6 +315,7 @@ export interface ClaimPreview {
   burned: Partial<Record<ItemId, number>>
   rareDrops: Partial<Record<ItemId, number>>
   autoEaten: Partial<Record<ItemId, number>>
+  stoppedBySupply: ItemId | null
   hpRestored: number
   hpLost: number
   stoppedByHp: boolean
@@ -370,6 +401,8 @@ export const SKILLS: SkillDefinition[] = [
   { id: 'smithing', name: 'Smithing', tone: 'ember' },
   { id: 'cooking', name: 'Cooking', tone: 'copper' },
   { id: 'crafting', name: 'Crafting', tone: 'teal' },
+  { id: 'ranged', name: 'Ranged', tone: 'green' },
+  { id: 'magic', name: 'Magic', tone: 'violet' },
 ]
 
 export const MARKET_CATEGORIES: MarketCategory[] = [
@@ -845,6 +878,117 @@ export const ITEMS: Record<ItemId, ItemDefinition> = {
     marketPrice: 99,
     transferClass: 'ERC-1155',
   },
+  feather: {
+    id: 'feather',
+    name: 'Feathers',
+    kind: 'Material',
+    marketPrice: 3,
+    transferClass: 'ERC-1155',
+  },
+  bronzeArrowtips: {
+    id: 'bronzeArrowtips',
+    name: 'Bronze Arrowtips',
+    kind: 'Material',
+    tier: 'T1',
+    marketPrice: 2,
+    transferClass: 'ERC-1155',
+  },
+  ironArrowtips: {
+    id: 'ironArrowtips',
+    name: 'Iron Arrowtips',
+    kind: 'Material',
+    tier: 'T2',
+    marketPrice: 3,
+    transferClass: 'ERC-1155',
+  },
+  steelArrowtips: {
+    id: 'steelArrowtips',
+    name: 'Steel Arrowtips',
+    kind: 'Material',
+    tier: 'T3',
+    marketPrice: 5,
+    transferClass: 'ERC-1155',
+  },
+  tungstenArrowtips: {
+    id: 'tungstenArrowtips',
+    name: 'Tungsten Arrowtips',
+    kind: 'Material',
+    tier: 'T4',
+    marketPrice: 9,
+    transferClass: 'ERC-1155',
+  },
+  ashBow: {
+    id: 'ashBow',
+    name: 'Ash Bow',
+    kind: 'Weapon',
+    slot: 'weapon',
+    tier: 'T1',
+    stats: { attack: 2 },
+    marketPrice: craftingOutputMarketPrice(3 * 3),
+    transferClass: 'ERC-1155',
+  },
+  pineBow: {
+    id: 'pineBow',
+    name: 'Pine Bow',
+    kind: 'Weapon',
+    slot: 'weapon',
+    tier: 'T2',
+    stats: { attack: 4 },
+    marketPrice: craftingOutputMarketPrice(3 * 7),
+    transferClass: 'ERC-1155',
+  },
+  oakBow: {
+    id: 'oakBow',
+    name: 'Oak Bow',
+    kind: 'Weapon',
+    slot: 'weapon',
+    tier: 'T3',
+    stats: { attack: 6 },
+    marketPrice: craftingOutputMarketPrice(3 * 13),
+    transferClass: 'ERC-1155',
+  },
+  ironbarkBow: {
+    id: 'ironbarkBow',
+    name: 'Ironbark Bow',
+    kind: 'Weapon',
+    slot: 'weapon',
+    tier: 'T4',
+    stats: { attack: 9 },
+    marketPrice: craftingOutputMarketPrice(2 * 28),
+    transferClass: 'ERC-1155',
+  },
+  bronzeArrow: {
+    id: 'bronzeArrow',
+    name: 'Bronze Arrows',
+    kind: 'Ammunition',
+    tier: 'T1',
+    marketPrice: 1,
+    transferClass: 'ERC-1155',
+  },
+  ironArrow: {
+    id: 'ironArrow',
+    name: 'Iron Arrows',
+    kind: 'Ammunition',
+    tier: 'T2',
+    marketPrice: 2,
+    transferClass: 'ERC-1155',
+  },
+  steelArrow: {
+    id: 'steelArrow',
+    name: 'Steel Arrows',
+    kind: 'Ammunition',
+    tier: 'T3',
+    marketPrice: 3,
+    transferClass: 'ERC-1155',
+  },
+  tungstenArrow: {
+    id: 'tungstenArrow',
+    name: 'Tungsten Arrows',
+    kind: 'Ammunition',
+    tier: 'T4',
+    marketPrice: 5,
+    transferClass: 'ERC-1155',
+  },
   leatherCowl: {
     id: 'leatherCowl',
     name: 'Leather Cowl',
@@ -1224,7 +1368,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     group: 'Combat',
     scene: 'arena',
     primarySkill: 'attack',
-    levelReqs: { attack: 1 },
+    levelReqs: {},
     cycleMs: 7000,
     xp: { attack: 15, defence: 8, hitpoints: 8 },
     rewards: { tannedHide: 1, crowns: 2 },
@@ -1244,6 +1388,24 @@ export const ACTIVITIES: ActivityDefinition[] = [
     combat: { damageChance: 34, minDamage: 1, maxDamage: 3 },
   },
   {
+    id: 'featherHawk',
+    name: 'Feather Hawk',
+    zone: 'Hearthline Cliffs',
+    group: 'Combat',
+    scene: 'arena',
+    primarySkill: 'attack',
+    levelReqs: { attack: 4 },
+    cycleMs: 10000,
+    xp: { attack: 44, defence: 26, hitpoints: 26 },
+    rewards: { feather: 1, crowns: 4 },
+    combat: {
+      damageChance: 42,
+      minDamage: 2,
+      maxDamage: 5,
+      dropTable: [{ itemId: 'feather', amount: 2, chance: 25, rarity: 'common' }],
+    },
+  },
+  {
     id: 'mossCamp',
     name: 'Moss Camp',
     zone: 'Fen Gate',
@@ -1255,7 +1417,7 @@ export const ACTIVITIES: ActivityDefinition[] = [
     cycleMs: 11000,
     xp: { attack: 35, defence: 22, hitpoints: 20 },
     rewards: { thickHide: 1, crowns: 8, runeDust: 1 },
-    combat: { damageChance: 46, minDamage: 2, maxDamage: 5 },
+    combat: { damageChance: 56, minDamage: 2, maxDamage: 5 },
   },
   {
     id: 'goblinForager',
@@ -1269,13 +1431,10 @@ export const ACTIVITIES: ActivityDefinition[] = [
     xp: { attack: 42, defence: 28, hitpoints: 25 },
     rewards: { thickHide: 1, crowns: 6 },
     combat: {
-      damageChance: 40,
+      damageChance: 50,
       minDamage: 2,
       maxDamage: 5,
-      dropTable: [
-        { itemId: 'pineLog', amount: 1, chance: 15, rarity: 'common' },
-        { itemId: 'runeDust', amount: 1, chance: 5, rarity: 'uncommon' },
-      ],
+      dropTable: [{ itemId: 'runeDust', amount: 1, chance: 5, rarity: 'uncommon' }],
     },
   },
   {
@@ -1291,13 +1450,10 @@ export const ACTIVITIES: ActivityDefinition[] = [
     xp: { attack: 60, defence: 35, hitpoints: 35 },
     rewards: { ruggedHide: 1, crowns: 12 },
     combat: {
-      damageChance: 48,
+      damageChance: 68,
       minDamage: 3,
       maxDamage: 8,
-      dropTable: [
-        { itemId: 'rawCod', amount: 1, chance: 10, rarity: 'common' },
-        { itemId: 'coalOre', amount: 1, chance: 5, rarity: 'uncommon' },
-      ],
+      dropTable: [{ itemId: 'coalOre', amount: 1, chance: 5, rarity: 'uncommon' }],
     },
   },
   {
@@ -1314,8 +1470,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     rewards: { cobaltScale: 1, crowns: 45 },
     combat: {
       damageChance: 58,
-      minDamage: 5,
-      maxDamage: 14,
+      minDamage: 8,
+      maxDamage: 19,
       dropTable: [
         { itemId: 'rawTuna', amount: 1, chance: 15, rarity: 'common' },
         { itemId: 'cobaltOre', amount: 1, chance: 8, rarity: 'uncommon' },
@@ -1336,8 +1492,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     rewards: { wyrmHide: 1, crowns: 90 },
     combat: {
       damageChance: 70,
-      minDamage: 8,
-      maxDamage: 22,
+      minDamage: 12,
+      maxDamage: 30,
       dropTable: [
         { itemId: 'rawManta', amount: 1, chance: 12, rarity: 'common' },
         { itemId: 'tungstenOre', amount: 1, chance: 5, rarity: 'uncommon' },
@@ -1359,8 +1515,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     rewards: { tannedHide: 2, crowns: 22 },
     combat: {
       damageChance: 50,
-      minDamage: 2,
-      maxDamage: 7,
+      minDamage: 4,
+      maxDamage: 10,
       dropTable: [
         { itemId: 'rawTrout', amount: 1, chance: 18, rarity: 'common' },
         { itemId: 'runeDust', amount: 1, chance: 6, rarity: 'uncommon' },
@@ -1381,8 +1537,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     rewards: { thickHide: 2, crowns: 35 },
     combat: {
       damageChance: 56,
-      minDamage: 3,
-      maxDamage: 9,
+      minDamage: 5,
+      maxDamage: 13,
       dropTable: [
         { itemId: 'ironHelm', amount: 1, chance: 3.5, rarity: 'rare' },
         { itemId: 'steelBar', amount: 1, chance: 5, rarity: 'uncommon' },
@@ -1403,8 +1559,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     rewards: { crowns: 58, runeDust: 1 },
     combat: {
       damageChance: 62,
-      minDamage: 5,
-      maxDamage: 12,
+      minDamage: 7,
+      maxDamage: 17,
       dropTable: [
         { itemId: 'steelHelm', amount: 1, chance: 2.5, rarity: 'rare' },
         { itemId: 'steelPlate', amount: 1, chance: 1.5, rarity: 'rare' },
@@ -1427,8 +1583,8 @@ export const ACTIVITIES: ActivityDefinition[] = [
     combat: {
       boss: true,
       damageChance: 72,
-      minDamage: 7,
-      maxDamage: 18,
+      minDamage: 10,
+      maxDamage: 24,
       dropTable: [
         { itemId: 'treantBark', amount: 1, chance: 18, rarity: 'uncommon' },
         { itemId: 'steelPlate', amount: 1, chance: 4, rarity: 'rare' },
@@ -1670,6 +1826,162 @@ export const ACTIVITIES: ActivityDefinition[] = [
     xp: { smithing: 370 },
     costs: { tungstenBar: 4, runeDust: 3 },
     rewards: { tungstenLegs: 1 },
+  },
+  {
+    id: 'bronzeArrowtipsForge',
+    name: 'Bronze Arrowtips',
+    zone: 'Stoneward',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'smithing',
+    levelReqs: { smithing: 4 },
+    cycleMs: 6000,
+    xp: { smithing: 18 },
+    costs: { bronzeBar: 1 },
+    rewards: { bronzeArrowtips: 15 },
+  },
+  {
+    id: 'ironArrowtipsForge',
+    name: 'Iron Arrowtips',
+    zone: 'Stoneward',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'smithing',
+    levelReqs: { smithing: 10 },
+    cycleMs: 8000,
+    xp: { smithing: 45 },
+    costs: { ironBar: 1 },
+    rewards: { ironArrowtips: 20 },
+  },
+  {
+    id: 'steelArrowtipsForge',
+    name: 'Steel Arrowtips',
+    zone: 'Stoneward',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'smithing',
+    levelReqs: { smithing: 35 },
+    cycleMs: 12000,
+    xp: { smithing: 90 },
+    costs: { steelBar: 1 },
+    rewards: { steelArrowtips: 30 },
+  },
+  {
+    id: 'tungstenArrowtipsForge',
+    name: 'Tungsten Arrowtips',
+    zone: 'Deep Crucible',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'smithing',
+    levelReqs: { smithing: 55 },
+    cycleMs: 18000,
+    xp: { smithing: 170 },
+    costs: { tungstenBar: 1 },
+    rewards: { tungstenArrowtips: 40 },
+  },
+  {
+    id: 'craftAshBow',
+    name: 'Craft Ash Bow',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 1 },
+    cycleMs: 6000,
+    xp: { crafting: 18 },
+    costs: { ashLog: 3 },
+    rewards: { ashBow: 1 },
+  },
+  {
+    id: 'craftPineBow',
+    name: 'Craft Pine Bow',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 5 },
+    cycleMs: 7000,
+    xp: { crafting: 34 },
+    costs: { pineLog: 3 },
+    rewards: { pineBow: 1 },
+  },
+  {
+    id: 'craftOakBow',
+    name: 'Craft Oak Bow',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 10 },
+    cycleMs: 9000,
+    xp: { crafting: 60 },
+    costs: { oakLog: 3 },
+    rewards: { oakBow: 1 },
+  },
+  {
+    id: 'craftIronbarkBow',
+    name: 'Craft Ironbark Bow',
+    zone: 'Deep Crucible',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 20 },
+    cycleMs: 12000,
+    xp: { crafting: 110 },
+    costs: { ironbarkLog: 2 },
+    rewards: { ironbarkBow: 1 },
+  },
+  {
+    id: 'craftBronzeArrows',
+    name: 'Craft Bronze Arrows',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 3 },
+    cycleMs: 5000,
+    xp: { crafting: 25 },
+    costs: { ashLog: 1, bronzeArrowtips: 15, feather: 15 },
+    rewards: { bronzeArrow: 15 },
+  },
+  {
+    id: 'craftIronArrows',
+    name: 'Craft Iron Arrows',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 10 },
+    cycleMs: 8000,
+    xp: { crafting: 55 },
+    costs: { pineLog: 1, ironArrowtips: 20, feather: 20 },
+    rewards: { ironArrow: 20 },
+  },
+  {
+    id: 'craftSteelArrows',
+    name: 'Craft Steel Arrows',
+    zone: 'Hearthline',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 35 },
+    cycleMs: 12000,
+    xp: { crafting: 120 },
+    costs: { oakLog: 1, steelArrowtips: 30, feather: 30 },
+    rewards: { steelArrow: 30 },
+  },
+  {
+    id: 'craftTungstenArrows',
+    name: 'Craft Tungsten Arrows',
+    zone: 'Deep Crucible',
+    group: 'Artisan',
+    scene: 'forge',
+    primarySkill: 'crafting',
+    levelReqs: { crafting: 55 },
+    cycleMs: 16000,
+    xp: { crafting: 230 },
+    costs: { ironbarkLog: 1, tungstenArrowtips: 40, feather: 40 },
+    rewards: { tungstenArrow: 40 },
   },
   {
     id: 'craftLeatherCowl',
@@ -1996,10 +2308,6 @@ export function getActivityAreaId(activity: ActivityDefinition): AreaId {
   return ZONE_AREAS[activity.zone] ?? STARTER_AREA_ID
 }
 
-export function getAreaActivities(areaId: AreaId): ActivityDefinition[] {
-  return ACTIVITIES.filter((activity) => getActivityAreaId(activity) === areaId)
-}
-
 export function isAreaUnlocked(state: GameState, areaId: AreaId): boolean {
   return state.unlockedAreaIds.includes(areaId)
 }
@@ -2107,6 +2415,19 @@ export const MARKET_ITEMS: ItemId[] = [
   'ruggedHide',
   'cobaltScale',
   'wyrmHide',
+  'feather',
+  'bronzeArrowtips',
+  'ironArrowtips',
+  'steelArrowtips',
+  'tungstenArrowtips',
+  'ashBow',
+  'pineBow',
+  'oakBow',
+  'ironbarkBow',
+  'bronzeArrow',
+  'ironArrow',
+  'steelArrow',
+  'tungstenArrow',
   'leatherCowl',
   'leatherBody',
   'leatherChaps',
@@ -2241,6 +2562,7 @@ export function createInitialState(): GameState {
       stopAtHitpoints: 6,
       foodItemId: 'cookedMinnow',
       maxFoodPerClaim: 12,
+      trainingStyle: 'auto',
     },
     currentHitpoints: 10,
     currentAreaId: STARTER_AREA_ID,
@@ -2416,13 +2738,6 @@ export function getCycleMs(activity: ActivityDefinition, state: GameState): numb
   return Math.max(2500, Math.round(activity.cycleMs * multiplier))
 }
 
-export function getActivityLock(
-  activity: ActivityDefinition,
-  state: GameState,
-): string | null {
-  return getActivityLocks(activity, state)[0] ?? null
-}
-
 export function getActivityLocks(
   activity: ActivityDefinition,
   state: GameState,
@@ -2438,9 +2753,11 @@ export function getActivityLocks(
   }
 
   for (const [skillId, requiredLevel] of Object.entries(activity.levelReqs)) {
-    const currentLevel = levelFromXp(state.skills[skillId as SkillId].xp)
+    const checkedSkillId =
+      activity.combat && skillId === 'attack' ? getCombatTrainingSkill(state) : (skillId as SkillId)
+    const currentLevel = levelFromXp(state.skills[checkedSkillId].xp)
     if (currentLevel < requiredLevel) {
-      locks.push(`${SKILLS.find((skill) => skill.id === skillId)?.name} ${requiredLevel}`)
+      locks.push(`${SKILLS.find((skill) => skill.id === checkedSkillId)?.name} ${requiredLevel}`)
     }
   }
 
@@ -2479,24 +2796,26 @@ export function getClaimPreview(state: GameState, now = Date.now()): ClaimPrevie
   const possibleCycles = Math.max(0, Math.min(rawCycles, affordableCycles))
   const combatResult = getCombatCycleResult(activity, state, possibleCycles, cycleMs)
   const cycles = activity.combat ? combatResult.cycles : possibleCycles
+  const rewardCycles = activity.combat ? combatResult.hitCycles : cycles
   const cookingOutcome = getCookingOutcome(activity, state, cycles, cycleMs)
-  const rareDrops = getRareDropOutcome(activity, state, cycles, cycleMs)
+  const rareDrops = getRareDropOutcome(activity, state, rewardCycles, cycleMs)
 
   return {
     cycles,
     progressPct: ((elapsedMs % cycleMs) / cycleMs) * 100,
     elapsedMs,
     cycleMs,
-    xp: multiplyXpMap(activity.xp, cycles),
+    xp: getActivityXpPreview(activity, state, rewardCycles),
     rewards: {
-      ...multiplyMap(activity.rewards, cycles),
+      ...multiplyMap(activity.rewards, rewardCycles),
       ...cookingOutcome.rewards,
       ...rareDrops,
     },
-    costs: multiplyMap(activity.costs ?? {}, cycles),
+    costs: mergeItemMaps(multiplyMap(activity.costs ?? {}, cycles), combatResult.consumedItems),
     burned: cookingOutcome.burned,
     rareDrops,
     autoEaten: combatResult.autoEaten,
+    stoppedBySupply: combatResult.stoppedBySupply,
     hpRestored: combatResult.hpRestored,
     hpLost: combatResult.hpLost,
     stoppedByHp: combatResult.stoppedByHp,
@@ -2510,7 +2829,10 @@ export function applyClaim(state: GameState, now = Date.now()) {
 
   if (!state.active || preview.cycles === 0) {
     if (preview.stoppedByHp) {
-      const inventory = applyConsumedFood(state.inventory, preview.autoEaten)
+      const inventory = applyItemCosts(
+        applyConsumedFood(state.inventory, preview.autoEaten),
+        preview.costs,
+      )
       const maxHp = getMaxHitpoints(state)
       const currentHitpoints = Math.max(
         0,
@@ -2536,8 +2858,11 @@ export function applyClaim(state: GameState, now = Date.now()) {
       }
     }
 
-    if (preview.stoppedBySafety) {
-      const inventory = applyConsumedFood(state.inventory, preview.autoEaten)
+    if (preview.stoppedBySafety || preview.stoppedBySupply) {
+      const inventory = applyItemCosts(
+        applyConsumedFood(state.inventory, preview.autoEaten),
+        preview.costs,
+      )
       const maxHp = getMaxHitpoints(state)
 
       return {
@@ -2618,7 +2943,7 @@ export function applyClaim(state: GameState, now = Date.now()) {
       inventory: nextInventory,
       equipment: nextEquipment,
       currentHitpoints,
-      active: preview.stoppedByHp || preview.stoppedBySafety
+      active: preview.stoppedByHp || preview.stoppedBySafety || preview.stoppedBySupply
         ? null
         : {
             ...state.active,
@@ -2711,6 +3036,8 @@ export function summarizePreview(preview: ClaimPreview): string {
     ? 'combat stopped'
     : preview.stoppedBySafety
       ? 'combat safety stop'
+      : preview.stoppedBySupply
+        ? `combat stopped: no ${ITEMS[preview.stoppedBySupply].name}`
       : ''
 
   return [
@@ -2813,6 +3140,9 @@ function normalizeCombatSettings(
 ): CombatSettings {
   const foodItemId =
     value?.foodItemId && ITEMS[value.foodItemId]?.healAmount ? value.foodItemId : fallback.foodItemId
+  const trainingStyle = isCombatTrainingStyle(value?.trainingStyle)
+    ? value.trainingStyle
+    : fallback.trainingStyle
 
   return {
     autoEat: Boolean(value?.autoEat ?? fallback.autoEat),
@@ -2825,7 +3155,12 @@ function normalizeCombatSettings(
       1,
       Math.min(99, Math.floor(Number(value?.maxFoodPerClaim ?? fallback.maxFoodPerClaim))),
     ),
+    trainingStyle,
   }
+}
+
+function isCombatTrainingStyle(value: unknown): value is CombatTrainingStyle {
+  return value === 'auto' || value === 'attack' || value === 'ranged' || value === 'magic'
 }
 
 function normalizeUnlockedAreaIds(value: AreaId[] | undefined): AreaId[] {
@@ -2860,6 +3195,19 @@ function applyConsumedFood(
   const next = { ...inventory }
 
   for (const [itemId, amount] of Object.entries(autoEaten)) {
+    next[itemId as ItemId] = Math.max(0, next[itemId as ItemId] - amount)
+  }
+
+  return next
+}
+
+function applyItemCosts(
+  inventory: Inventory,
+  costs: Partial<Record<ItemId, number>>,
+): Inventory {
+  const next = { ...inventory }
+
+  for (const [itemId, amount] of Object.entries(costs)) {
     next[itemId as ItemId] = Math.max(0, next[itemId as ItemId] - amount)
   }
 
@@ -2914,24 +3262,31 @@ function getCombatCycleResult(
       hpLost: 0,
       hpRestored: 0,
       autoEaten: {} as Partial<Record<ItemId, number>>,
+      consumedItems: {} as Partial<Record<ItemId, number>>,
+      hitCycles: possibleCycles,
       stoppedByHp: false,
       stoppedBySafety: false,
+      stoppedBySupply: null as ItemId | null,
     }
   }
 
   let cycles = 0
+  let hitCycles = 0
   let hpLost = 0
   let hpRestored = 0
   let hp = state.currentHitpoints
   let foodUsed = 0
   const autoEaten: Partial<Record<ItemId, number>> = {}
+  const consumedItems: Partial<Record<ItemId, number>> = {}
+  const availableInventory = { ...state.inventory }
   const maxHp = getMaxHitpoints(state)
   const settings = state.combatSettings
+  const trainingStyle = getResolvedCombatTrainingStyle(state)
   const foodItemId = settings.foodItemId
   const stopAtHitpoints = Math.min(settings.stopAtHitpoints, Math.max(1, maxHp - 1))
   let availableFood =
     settings.autoEat && foodItemId && ITEMS[foodItemId].healAmount
-      ? state.inventory[foodItemId]
+      ? availableInventory[foodItemId]
       : 0
 
   for (let index = 0; index < possibleCycles; index += 1) {
@@ -2944,6 +3299,7 @@ function getCombatCycleResult(
       ) {
         const restored = Math.min(maxHp, hp + (ITEMS[foodItemId].healAmount ?? 0)) - hp
         availableFood -= 1
+        availableInventory[foodItemId] -= 1
         foodUsed += 1
         hp += restored
         hpRestored += restored
@@ -2956,13 +3312,36 @@ function getCombatCycleResult(
           hpLost,
           hpRestored,
           autoEaten,
+          consumedItems,
+          hitCycles,
           stoppedByHp: false,
           stoppedBySafety: true,
+          stoppedBySupply: null,
         }
       }
     }
 
     const cycleIndex = getCycleIndex(state, cycleMs, index)
+    const consumedItem = consumeCombatSupply(trainingStyle, availableInventory)
+
+    if (!consumedItem && (trainingStyle === 'ranged' || trainingStyle === 'magic')) {
+      return {
+        cycles,
+        hpLost,
+        hpRestored,
+        autoEaten,
+        consumedItems,
+        hitCycles,
+        stoppedByHp: false,
+        stoppedBySafety: false,
+        stoppedBySupply: (trainingStyle === 'magic' ? 'runeDust' : 'bronzeArrow') as ItemId,
+      }
+    }
+
+    if (consumedItem) {
+      consumedItems[consumedItem] = (consumedItems[consumedItem] ?? 0) + 1
+    }
+
     const damage = getCombatDamage(activity, state, cycleIndex)
 
     if (damage > 0 && hp - damage <= 0) {
@@ -2972,13 +3351,19 @@ function getCombatCycleResult(
         hpLost,
         hpRestored,
         autoEaten,
+        consumedItems,
+        hitCycles,
         stoppedByHp: true,
         stoppedBySafety: false,
+        stoppedBySupply: null,
       }
     }
 
     hp -= damage
     hpLost += damage
+    if (getCombatHit(activity, state, cycleIndex, trainingStyle)) {
+      hitCycles += 1
+    }
     cycles += 1
   }
 
@@ -2987,9 +3372,132 @@ function getCombatCycleResult(
     hpLost,
     hpRestored,
     autoEaten,
+    consumedItems,
+    hitCycles,
     stoppedByHp: false,
     stoppedBySafety: false,
+    stoppedBySupply: null,
   }
+}
+
+const RANGED_AMMO_PRIORITY: ItemId[] = [
+  'tungstenArrow',
+  'steelArrow',
+  'ironArrow',
+  'bronzeArrow',
+]
+
+function consumeCombatSupply(
+  style: CombatTrainingStyle,
+  inventory: Inventory,
+): ItemId | null {
+  if (style === 'ranged') {
+    const itemId = RANGED_AMMO_PRIORITY.find((candidate) => inventory[candidate] > 0)
+    if (!itemId) {
+      return null
+    }
+
+    inventory[itemId] -= 1
+    return itemId
+  }
+
+  if (style === 'magic') {
+    if (inventory.runeDust <= 0) {
+      return null
+    }
+
+    inventory.runeDust -= 1
+    return 'runeDust'
+  }
+
+  return null
+}
+
+function getActivityXpPreview(
+  activity: ActivityDefinition,
+  state: GameState,
+  cycles: number,
+): Partial<Record<SkillId, number>> {
+  if (!activity.combat) {
+    return multiplyXpMap(activity.xp, cycles)
+  }
+
+  const xp = multiplyXpMap(activity.xp, cycles)
+  const offensiveSkill = getCombatTrainingSkill(state)
+
+  if (offensiveSkill !== 'attack' && xp.attack) {
+    xp[offensiveSkill] = (xp[offensiveSkill] ?? 0) + xp.attack
+    delete xp.attack
+  }
+
+  return xp
+}
+
+function getCombatTrainingSkill(state: GameState): SkillId {
+  const style = getResolvedCombatTrainingStyle(state)
+  if (style === 'ranged') {
+    return 'ranged'
+  }
+  if (style === 'magic') {
+    return 'magic'
+  }
+
+  return 'attack'
+}
+
+function getResolvedCombatTrainingStyle(state: GameState): CombatTrainingStyle {
+  if (state.combatSettings.trainingStyle !== 'auto') {
+    return state.combatSettings.trainingStyle
+  }
+
+  return isRangedWeapon(state.equipment.weapon) ? 'ranged' : 'attack'
+}
+
+function isRangedWeapon(itemId: ItemId | null): boolean {
+  return itemId === 'ashBow' || itemId === 'pineBow' || itemId === 'oakBow' || itemId === 'ironbarkBow'
+}
+
+function getCombatHit(
+  activity: ActivityDefinition,
+  state: GameState,
+  cycleIndex: number,
+  style: CombatTrainingStyle,
+): boolean {
+  const hitRoll = rollPercent(state.active?.startedAt ?? 0, cycleIndex, 89)
+  return hitRoll < getCombatAccuracy(activity, state, style)
+}
+
+function getCombatAccuracy(
+  activity: ActivityDefinition,
+  state: GameState,
+  style: CombatTrainingStyle,
+): number {
+  if (activity.id === 'trainingYard') {
+    return 100
+  }
+
+  const stats = getEquipmentStats(state)
+  const skill = style === 'ranged' ? 'ranged' : style === 'magic' ? 'magic' : 'attack'
+  const skillLevel = levelFromXp(state.skills[skill].xp)
+  const defenceReq = activity.levelReqs.defence ?? 1
+  const offence = skillLevel * 120 + stats.attack * 75 + (Math.max(1, stats.attack) + Math.floor((skillLevel - 1) / 12)) * 40 + 100
+  const monsterDefence = defenceReq * 100 + 100
+  const chance = 15 + (offence * 80) / (offence + monsterDefence)
+
+  return Math.min(98, chance)
+}
+
+function mergeItemMaps(
+  first: Partial<Record<ItemId, number>>,
+  second: Partial<Record<ItemId, number>>,
+): Partial<Record<ItemId, number>> {
+  const merged = { ...first }
+
+  for (const [itemId, amount] of Object.entries(second)) {
+    merged[itemId as ItemId] = (merged[itemId as ItemId] ?? 0) + amount
+  }
+
+  return merged
 }
 
 function getCombatDamage(
@@ -3097,6 +3605,7 @@ function emptyPreview(cycleMs: number): ClaimPreview {
     burned: {},
     rareDrops: {},
     autoEaten: {},
+    stoppedBySupply: null,
     hpRestored: 0,
     hpLost: 0,
     stoppedByHp: false,

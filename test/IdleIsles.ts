@@ -21,9 +21,21 @@ describe("IdleIsles", async function () {
   const BARK_LEGGINGS = 65n;
   const HIDE = 70n;
   const FIELD_CHARM = 71n;
+  const RUNE_DUST = 72n;
+  const FEATHER = 77n;
   const LEATHER_COWL = 80n;
+  const BRONZE_ARROWTIPS = 95n;
+  const ASH_BOW = 120n;
+  const BRONZE_ARROW = 130n;
+  const TUNGSTEN_ARROW = 133n;
   const TRAINING_YARD = 101;
+  const MOSS_CAMP = 103;
   const CAVE_BAT = 104;
+  const GOBLIN_FORAGER = 108;
+  const GIANT_SPIDER = 109;
+  const DIRE_WOLF = 110;
+  const VENOMOUS_DRAKE = 111;
+  const FEATHER_HAWK = 112;
   const ASH_GROVE = 201;
   const COPPER_RIDGE = 202;
   const TIN_HOLLOW = 203;
@@ -36,6 +48,9 @@ describe("IdleIsles", async function () {
   const COOK_MINNOW = 304;
   const BARK_LEGGINGS_CRAFT = 305;
   const CRAFT_LEATHER_COWL = 320;
+  const BRONZE_ARROWTIPS_FORGE = 340;
+  const ASH_BOW_CRAFT = 344;
+  const BRONZE_ARROWS_CRAFT = 348;
   const SLOT_WEAPON = 0;
   const SLOT_CHEST = 3;
   const SLOT_LEGS = 4;
@@ -46,6 +61,11 @@ describe("IdleIsles", async function () {
   async function deployIdleIsles() {
     const content = await viem.deployContract("IdleIslesContent");
     return viem.deployContract("IdleIsles", ["ipfs://idle-isles/{id}.json", content.address]);
+  }
+
+  async function deployIdleIslesHarness() {
+    const content = await viem.deployContract("IdleIslesContent");
+    return viem.deployContract("IdleIslesHarness", ["ipfs://idle-isles/{id}.json", content.address]);
   }
 
   async function deployIdleIslesWithHoardHall() {
@@ -180,6 +200,98 @@ describe("IdleIsles", async function () {
     });
   });
 
+  it("exposes ranged item stats, recipes, and feather drops", async function () {
+    const content = await viem.deployContract("IdleIslesContent");
+
+    assert.deepEqual(await content.read.itemSlot([ASH_BOW]), [true, SLOT_WEAPON]);
+
+    const weaponStats = await content.read.weaponStatsOf([ASH_BOW]);
+    assert.equal(weaponStats.style, 2);
+    assert.equal(weaponStats.damage, 2);
+    assert.equal(weaponStats.accuracy, 10);
+
+    const [tipsConfig, tipsCosts, tipsRewards] =
+      await content.read.getArtisanActivity([BRONZE_ARROWTIPS_FORGE]);
+    assert.deepEqual(decodeRecipeConfig(tipsConfig), {
+      cycleSeconds: 6,
+      skill: 6,
+      reqLevel: 4,
+      xp: 18,
+      cookedItem: 0n,
+    });
+    assert.deepEqual(decodeRecipePair(tipsCosts, 0), { itemId: COPPER_BAR, amount: 1n });
+    assert.deepEqual(decodeRecipePair(tipsRewards, 0), {
+      itemId: BRONZE_ARROWTIPS,
+      amount: 15n,
+    });
+
+    const [bowConfig, bowCosts, bowRewards] =
+      await content.read.getArtisanActivity([ASH_BOW_CRAFT]);
+    assert.deepEqual(decodeRecipeConfig(bowConfig), {
+      cycleSeconds: 6,
+      skill: 8,
+      reqLevel: 1,
+      xp: 18,
+      cookedItem: 0n,
+    });
+    assert.deepEqual(decodeRecipePair(bowCosts, 0), { itemId: ASH_LOG, amount: 3n });
+    assert.deepEqual(decodeRecipePair(bowRewards, 0), { itemId: ASH_BOW, amount: 1n });
+
+    const [, arrowCosts, arrowRewards] =
+      await content.read.getArtisanActivity([BRONZE_ARROWS_CRAFT]);
+    assert.deepEqual(decodeRecipePair(arrowCosts, 0), { itemId: ASH_LOG, amount: 1n });
+    assert.deepEqual(decodeRecipePair(arrowCosts, 1), {
+      itemId: BRONZE_ARROWTIPS,
+      amount: 15n,
+    });
+    assert.deepEqual(decodeRecipePair(arrowCosts, 2), { itemId: FEATHER, amount: 15n });
+    assert.deepEqual(decodeRecipePair(arrowRewards, 0), { itemId: BRONZE_ARROW, amount: 15n });
+
+    const featherDrop = await content.read.getDrop([CAVE_BAT, 2]);
+    assert.equal(featherDrop.itemId, FEATHER);
+    assert.equal(featherDrop.amount, 2n);
+    assert.equal(featherDrop.chanceBps, 1200);
+
+    const featherHawk = await content.read.getCombatActivity([FEATHER_HAWK]);
+    assert.equal(featherHawk.cycleSeconds, 10);
+    assert.equal(featherHawk.reqAttack, 4);
+    assert.equal(featherHawk.reqDefence, 1);
+    assert.equal(featherHawk.reqHitpoints, 1);
+    assert.equal(featherHawk.requiredEquipment, 0n);
+    assert.equal(featherHawk.xpAttack, 44);
+    assert.equal(featherHawk.damageChanceBps, 4200);
+    assert.equal(featherHawk.minDamage, 2);
+    assert.equal(featherHawk.maxDamage, 5);
+
+    const hawkDrop = await content.read.getDrop([FEATHER_HAWK, 0]);
+    assert.equal(hawkDrop.itemId, FEATHER);
+    assert.equal(hawkDrop.amount, 2n);
+    assert.equal(hawkDrop.chanceBps, 2500);
+
+    const mossCamp = await content.read.getCombatActivity([MOSS_CAMP]);
+    assert.equal(mossCamp.damageChanceBps, 5600);
+    assert.equal(mossCamp.minDamage, 2);
+    assert.equal(mossCamp.maxDamage, 5);
+
+    const goblinForager = await content.read.getCombatActivity([GOBLIN_FORAGER]);
+    assert.equal(goblinForager.damageChanceBps, 5000);
+    assert.equal(goblinForager.minDamage, 2);
+    assert.equal(goblinForager.maxDamage, 5);
+
+    const giantSpider = await content.read.getCombatActivity([GIANT_SPIDER]);
+    assert.equal(giantSpider.damageChanceBps, 6800);
+    assert.equal(giantSpider.minDamage, 3);
+    assert.equal(giantSpider.maxDamage, 8);
+
+    const direWolf = await content.read.getCombatActivity([DIRE_WOLF]);
+    assert.equal(direWolf.minDamage, 8);
+    assert.equal(direWolf.maxDamage, 19);
+
+    const venomousDrake = await content.read.getCombatActivity([VENOMOUS_DRAKE]);
+    assert.equal(venomousDrake.minDamage, 12);
+    assert.equal(venomousDrake.maxDamage, 30);
+  });
+
   it("creates a profile with starter HP and Crowns", async function () {
     const [player] = await viem.getWalletClients();
     const game = await deployIdleIsles();
@@ -207,6 +319,21 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.currentAreaId([player.account.address]), AREA_STARTER);
     assert.equal(await game.read.isAreaUnlocked([player.account.address, AREA_OUTER_ISLES]), false);
     assert.equal(await game.read.balanceOf([player.account.address, CROWNS]), 80n);
+  });
+
+  it("allows Feather Hawk in the starter area after its combat requirements are met", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIslesHarness();
+
+    await game.write.createProfile();
+    await game.write.setSkillXpForTest([player.account.address, 0, await game.read.xpRequiredForLevel([4])]);
+
+    await game.write.startCombat([FEATHER_HAWK]);
+
+    const activeTask = await game.read.activeTask([player.account.address]);
+
+    assert.equal(await game.read.currentAreaId([player.account.address]), AREA_STARTER);
+    assert.equal(activeTask[0], FEATHER_HAWK);
   });
 
   it("settles completed combat cycles and grants training rewards", async function () {
@@ -423,6 +550,93 @@ describe("IdleIsles", async function () {
     assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
     assert.equal(await game.read.balanceOf([player.account.address, ASH_LOG]), 1n);
     assert.equal(await game.read.skillXp([player.account.address, 8]), 30n);
+  });
+
+  it("auto-detects bows as ranged weapons and stops combat without arrows", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIsles();
+
+    await game.write.createProfile();
+    await game.write.startGather([ASH_GROVE]);
+    await networkHelpers.time.increase(10);
+    await game.write.claim();
+    await game.write.startArtisan([ASH_BOW_CRAFT]);
+    await networkHelpers.time.increase(6);
+    await game.write.claim();
+    await game.write.equip([ASH_BOW]);
+
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    const activeTask = await game.read.activeTask([player.account.address]);
+
+    assert.equal(activeTask[0], 0);
+    assert.equal(await game.read.balanceOf([player.account.address, ASH_BOW]), 0n);
+    assert.equal(await game.read.skillXp([player.account.address, 0]), 0n);
+    assert.equal(await game.read.skillXp([player.account.address, 9]), 0n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 0n);
+  });
+
+  it("uses an explicit Attack training preference instead of ranged weapon auto-detection", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIslesHarness();
+
+    await game.write.createProfile();
+    await game.write.mintForTest([player.account.address, ASH_BOW, 1n]);
+    await game.write.equip([ASH_BOW]);
+    await game.write.setCombatStylePreference([1]);
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    assert.equal(await game.read.combatStylePreference([player.account.address]), 1);
+    assert.equal(await game.read.skillXp([player.account.address, 0]), 30n);
+    assert.equal(await game.read.skillXp([player.account.address, 9]), 0n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 1n);
+  });
+
+  it("burns exactly one highest-tier arrow for each completed Ranged combat cycle", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIslesHarness();
+
+    await game.write.createProfile();
+    await game.write.mintForTest([player.account.address, BRONZE_ARROW, 1n]);
+    await game.write.mintForTest([player.account.address, TUNGSTEN_ARROW, 1n]);
+    await game.write.setCombatStylePreference([2]);
+    await game.write.startCombat([TRAINING_YARD]);
+
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, TUNGSTEN_ARROW]), 0n);
+    assert.equal(await game.read.balanceOf([player.account.address, BRONZE_ARROW]), 1n);
+    assert.equal(await game.read.skillXp([player.account.address, 9]), 30n);
+
+    await networkHelpers.time.increase(7);
+    await game.write.claim();
+
+    assert.equal(await game.read.balanceOf([player.account.address, BRONZE_ARROW]), 0n);
+    assert.equal(await game.read.skillXp([player.account.address, 9]), 60n);
+  });
+
+  it("burns Rune Dust for Magic cycles and stops cleanly when runes are missing", async function () {
+    const [player] = await viem.getWalletClients();
+    const game = await deployIdleIslesHarness();
+
+    await game.write.createProfile();
+    await game.write.mintForTest([player.account.address, RUNE_DUST, 1n]);
+    await game.write.setCombatStylePreference([3]);
+    await game.write.startCombat([TRAINING_YARD]);
+    await networkHelpers.time.increase(14);
+    await game.write.claim();
+
+    const activeTask = await game.read.activeTask([player.account.address]);
+
+    assert.equal(activeTask[0], 0);
+    assert.equal(await game.read.balanceOf([player.account.address, RUNE_DUST]), 0n);
+    assert.equal(await game.read.skillXp([player.account.address, 10]), 30n);
+    assert.equal(await game.read.balanceOf([player.account.address, HIDE]), 1n);
   });
 
   it("settles capped gather backlog without double-paying claimed cycles", async function () {

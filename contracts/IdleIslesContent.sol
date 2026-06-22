@@ -85,6 +85,19 @@ contract IdleIslesContent is IIdleIslesContent {
     uint256 internal constant RUGGED_HIDE = 74;
     uint256 internal constant COBALT_SCALE = 75;
     uint256 internal constant WYRM_HIDE = 76;
+    uint256 internal constant FEATHER = 77;
+    uint256 internal constant BRONZE_ARROWTIPS = 95;
+    uint256 internal constant IRON_ARROWTIPS = 96;
+    uint256 internal constant STEEL_ARROWTIPS = 97;
+    uint256 internal constant TUNGSTEN_ARROWTIPS = 98;
+    uint256 internal constant ASH_BOW = 120;
+    uint256 internal constant PINE_BOW = 121;
+    uint256 internal constant OAK_BOW = 122;
+    uint256 internal constant IRONBARK_BOW = 123;
+    uint256 internal constant BRONZE_ARROW = 130;
+    uint256 internal constant IRON_ARROW = 131;
+    uint256 internal constant STEEL_ARROW = 132;
+    uint256 internal constant TUNGSTEN_ARROW = 133;
 
     uint16 internal constant ACTIVITY_ASH_GROVE = 201;
     uint16 internal constant ACTIVITY_COPPER_RIDGE = 202;
@@ -143,6 +156,19 @@ contract IdleIslesContent is IIdleIslesContent {
     uint16 internal constant ACTIVITY_COOK_TUNA = 337;
     uint16 internal constant ACTIVITY_COOK_MANTA = 338;
     uint16 internal constant ACTIVITY_COOK_LEVIATHAN = 339;
+    uint16 internal constant ACTIVITY_BRONZE_ARROWTIPS = 340;
+    uint16 internal constant ACTIVITY_IRON_ARROWTIPS = 341;
+    uint16 internal constant ACTIVITY_STEEL_ARROWTIPS = 342;
+    uint16 internal constant ACTIVITY_TUNGSTEN_ARROWTIPS = 343;
+    uint16 internal constant ACTIVITY_ASH_BOW = 344;
+    uint16 internal constant ACTIVITY_PINE_BOW = 345;
+    uint16 internal constant ACTIVITY_OAK_BOW = 346;
+    uint16 internal constant ACTIVITY_IRONBARK_BOW = 347;
+    uint16 internal constant ACTIVITY_BRONZE_ARROWS = 348;
+    uint16 internal constant ACTIVITY_IRON_ARROWS = 349;
+    uint16 internal constant ACTIVITY_STEEL_ARROWS = 350;
+    uint16 internal constant ACTIVITY_TUNGSTEN_ARROWS = 351;
+    uint16 internal constant ACTIVITY_LAST_ARTISAN = ACTIVITY_TUNGSTEN_ARROWS;
 
     uint16 internal constant ACTIVITY_TRAINING_YARD = 101;
     uint16 internal constant ACTIVITY_FIELD_RAT = 102;
@@ -155,6 +181,7 @@ contract IdleIslesContent is IIdleIslesContent {
     uint16 internal constant ACTIVITY_GIANT_SPIDER = 109;
     uint16 internal constant ACTIVITY_DIRE_WOLF = 110;
     uint16 internal constant ACTIVITY_VENOMOUS_DRAKE = 111;
+    uint16 internal constant ACTIVITY_FEATHER_HAWK = 112;
 
     function itemSlot(uint256 itemId) external pure returns (bool equippable, uint8 slot) {
         if (
@@ -162,7 +189,8 @@ contract IdleIslesContent is IIdleIslesContent {
             itemId == COPPER_DAGGER ||
             itemId == IRON_SWORD ||
             itemId == STEEL_LONGSWORD ||
-            itemId == TUNGSTEN_BLADE
+            itemId == TUNGSTEN_BLADE ||
+            (itemId >= ASH_BOW && itemId <= IRONBARK_BOW)
         ) {
             return (true, 0);
         }
@@ -256,6 +284,28 @@ contract IdleIslesContent is IIdleIslesContent {
         if (itemId == FIELD_CHARM) return Stats(0, 0, 0, 2);
     }
 
+    function weaponStatsOf(uint256 itemId) external pure returns (WeaponStats memory stats) {
+        if (itemId == WOOD_CLUB) return WeaponStats(1, 2, 8);
+        if (itemId >= COPPER_DAGGER && itemId <= TUNGSTEN_BLADE) {
+            uint256 tier = (itemId - COPPER_DAGGER) / 3;
+            if (itemId == COPPER_DAGGER + tier * 3) {
+                return WeaponStats(
+                    1,
+                    _packedAt(0x0016000c00070003, tier),
+                    _packedAt(0x004b003200200012, tier)
+                );
+            }
+        }
+        if (itemId >= ASH_BOW && itemId <= IRONBARK_BOW) {
+            uint256 tier = itemId - ASH_BOW;
+            return WeaponStats(
+                2,
+                _packedAt(0x0009000600040002, tier),
+                _packedAt(0x002e00200014000a, tier)
+            );
+        }
+    }
+
     function healAmount(uint256 itemId) external pure returns (uint16) {
         if (itemId == COOKED_MINNOW) return 3;
         if (itemId == COOKED_TROUT) return 6;
@@ -344,6 +394,10 @@ contract IdleIslesContent is IIdleIslesContent {
         pure
         returns (uint256 config, uint256 costs, uint256 rewards)
     {
+        if (activityId >= ACTIVITY_BRONZE_ARROWTIPS && activityId <= ACTIVITY_LAST_ARTISAN) {
+            return _getRangedArtisanActivity(activityId);
+        }
+
         if (activityId < ACTIVITY_WOOD_ARMORY || activityId > ACTIVITY_COOK_LEVIATHAN) {
             revert BadActivity();
         }
@@ -359,122 +413,159 @@ contract IdleIslesContent is IIdleIslesContent {
         }
     }
 
+    function _getRangedArtisanActivity(uint16 activityId)
+        internal
+        pure
+        returns (uint256 config, uint256 costs, uint256 rewards)
+    {
+        uint256 tier;
+        if (activityId <= ACTIVITY_TUNGSTEN_ARROWTIPS) {
+            tier = activityId - ACTIVITY_BRONZE_ARROWTIPS;
+            return (
+                _recipeConfig(
+                    _packedAt(0x0012000c00080006, tier),
+                    SKILL_SMITHING,
+                    uint8(_packedAt(0x00370023000a0004, tier)),
+                    uint32(_packedAt(0x00aa005a002d0012, tier))
+                ),
+                _recipeItems(COPPER_BAR + tier, 1, 0, 0, 0, 0),
+                _recipeItems(
+                    BRONZE_ARROWTIPS + tier,
+                    _packedAt(0x0028001e0014000f, tier),
+                    0,
+                    0,
+                    0,
+                    0
+                )
+            );
+        }
+
+        if (activityId <= ACTIVITY_IRONBARK_BOW) {
+            tier = activityId - ACTIVITY_ASH_BOW;
+            return (
+                _recipeConfig(
+                    _packedAt(0x000c000900070006, tier),
+                    SKILL_CRAFTING,
+                    uint8(_packedAt(0x0014000a00050001, tier)),
+                    uint32(_packedAt(0x006e003c00220012, tier))
+                ),
+                _recipeItems(
+                    ASH_LOG + tier,
+                    _packedAt(0x0002000300030003, tier),
+                    0,
+                    0,
+                    0,
+                    0
+                ),
+                _recipeItems(ASH_BOW + tier, 1, 0, 0, 0, 0)
+            );
+        }
+
+        tier = activityId - ACTIVITY_BRONZE_ARROWS;
+        uint256 amount = _packedAt(0x0028001e0014000f, tier);
+        return (
+            _recipeConfig(
+                _packedAt(0x0010000c00080005, tier),
+                SKILL_CRAFTING,
+                uint8(_packedAt(0x00370023000a0003, tier)),
+                uint32(_packedAt(0x00e6007800370019, tier))
+            ),
+            _recipeItems(ASH_LOG + tier, 1, BRONZE_ARROWTIPS + tier, amount, FEATHER, amount),
+            _recipeItems(BRONZE_ARROW + tier, amount, 0, 0, 0, 0)
+        );
+    }
+
+    function _recipeConfig(
+        uint16 cycleSeconds,
+        uint8 skill,
+        uint8 reqLevel,
+        uint32 xp
+    ) internal pure returns (uint256) {
+        return
+            uint256(cycleSeconds) |
+            (uint256(skill) << 16) |
+            (uint256(reqLevel) << 24) |
+            (uint256(xp) << 32);
+    }
+
+    function _recipeItems(
+        uint256 item0,
+        uint256 amount0,
+        uint256 item1,
+        uint256 amount1,
+        uint256 item2,
+        uint256 amount2
+    ) internal pure returns (uint256) {
+        return
+            _recipePair(item0, amount0) |
+            (_recipePair(item1, amount1) << 32) |
+            (_recipePair(item2, amount2) << 64);
+    }
+
+    function _recipePair(uint256 itemId, uint256 amount) internal pure returns (uint256) {
+        return uint16(itemId) | (uint256(uint16(amount)) << 16);
+    }
+
+    function _packedAt(uint256 packed, uint256 index) internal pure returns (uint16) {
+        return uint16(packed >> (index * 16));
+    }
+
+    bytes internal constant COMBAT_DATA =
+        hex"000000000000000000000000000000000201096000080008000f000001010107"
+        hex"0000000000000000000000000000000003010d48000d000a0016000001010409"
+        hex"00000000000000000000000000000000050215e000140016002300350707080b"
+        hex"000000000000000000000000000000000a041388001e001c003400380e0e100d"
+        hex"000000000000000000000000000000000d0515e0002a0026004400381515180e"
+        hex"000000000000000000000000000000001107183800440040005f003b24232611"
+        hex"00000000000000000000000000000001180a1c200078007800b4003b3432371a"
+        hex"00000000000000000000000000000000050213880019001c002a00000a080a0a"
+        hex"0000000000000000000000000000000008031a9000230023003c00381212140c"
+        hex"00000000000000000000000000000000130816a8003c00370055003b201e230f"
+        hex"000000000000000000000000000000001e0c1b58006e006900a0003e37323716"
+        hex"0000000000000000000000000000000005021068001a001a002c00000101040a";
+
     function getCombatActivity(uint16 activityId)
         external
         pure
         returns (CombatActivity memory activity)
     {
-        if (activityId == ACTIVITY_TRAINING_YARD) {
-            return CombatActivity(activityId, 7, 1, 1, 1, 0, 15, 8, 8, 2400, 1, 2, false);
-        }
-        if (activityId == ACTIVITY_FIELD_RAT) {
-            return CombatActivity(activityId, 9, 4, 1, 3, 0, 22, 10, 13, 3400, 1, 3, false);
-        }
-        if (activityId == ACTIVITY_MOSS_CAMP) {
-            return CombatActivity(
-                activityId,
-                11,
-                8,
-                7,
-                7,
-                COPPER_DAGGER,
-                35,
-                22,
-                20,
-                4600,
-                2,
-                5,
-                false
-            );
-        }
-        if (activityId == ACTIVITY_CAVE_BAT) {
-            return CombatActivity(activityId, 13, 16, 14, 14, IRON_SWORD, 52, 28, 30, 5000, 2, 7, false);
-        }
-        if (activityId == ACTIVITY_BANDIT_SCOUT) {
-            return CombatActivity(activityId, 14, 24, 21, 21, IRON_SWORD, 68, 38, 42, 5600, 3, 9, false);
-        }
-        if (activityId == ACTIVITY_CRYPT_KNIGHT) {
-            return CombatActivity(
-                activityId,
-                17,
-                38,
-                35,
-                36,
-                STEEL_LONGSWORD,
-                95,
-                64,
-                68,
-                6200,
-                5,
-                12,
-                false
-            );
-        }
-        if (activityId == ACTIVITY_HOLLOW_TREANT) {
-            return CombatActivity(
-                activityId,
-                26,
-                55,
-                50,
-                52,
-                STEEL_LONGSWORD,
-                180,
-                120,
-                120,
-                7200,
-                7,
-                18,
-                true
-            );
-        }
-        if (activityId == ACTIVITY_GOBLIN_FORAGER) {
-            return CombatActivity(activityId, 10, 10, 8, 10, 0, 42, 28, 25, 4000, 2, 5, false);
-        }
-        if (activityId == ACTIVITY_GIANT_SPIDER) {
-            return CombatActivity(activityId, 12, 20, 18, 18, IRON_SWORD, 60, 35, 35, 4800, 3, 8, false);
-        }
-        if (activityId == ACTIVITY_DIRE_WOLF) {
-            return CombatActivity(
-                activityId,
-                15,
-                35,
-                30,
-                32,
-                STEEL_LONGSWORD,
-                85,
-                55,
-                60,
-                5800,
-                5,
-                14,
-                false
-            );
-        }
-        if (activityId == ACTIVITY_VENOMOUS_DRAKE) {
-            return CombatActivity(
-                activityId,
-                22,
-                55,
-                50,
-                55,
-                TUNGSTEN_BLADE,
-                160,
-                105,
-                110,
-                7000,
-                8,
-                22,
-                false
-            );
+        if (activityId < ACTIVITY_TRAINING_YARD || activityId > ACTIVITY_FEATHER_HAWK) {
+            revert BadActivity();
         }
 
-        revert BadActivity();
+        uint256 config;
+        uint256 offset = uint256(activityId - ACTIVITY_TRAINING_YARD) * 32;
+        bytes memory data = COMBAT_DATA;
+
+        assembly {
+            config := mload(add(add(data, 0x20), offset))
+        }
+
+        return CombatActivity(
+            activityId,
+            uint32(uint8(config)),
+            uint8(config >> 8),
+            uint8(config >> 16),
+            uint8(config >> 24),
+            uint16(config >> 32),
+            uint32(uint16(config >> 48)),
+            uint32(uint16(config >> 64)),
+            uint32(uint16(config >> 80)),
+            uint16(config >> 96),
+            uint16(uint8(config >> 112)),
+            uint16(uint8(config >> 120)),
+            uint8(config >> 128) != 0
+        );
     }
 
     function getDrop(uint16 activityId, uint8 index) external pure returns (Drop memory) {
         if (activityId == ACTIVITY_CAVE_BAT) {
             if (index == 0) return Drop(RAW_TROUT, 1, 1800, 1);
             if (index == 1) return Drop(RUNE_DUST, 1, 600, 2);
+            if (index == 2) return Drop(FEATHER, 2, 1200, 1);
+        }
+        if (activityId == ACTIVITY_FEATHER_HAWK) {
+            if (index == 0) return Drop(FEATHER, 2, 2500, 1);
         }
         if (activityId == ACTIVITY_BANDIT_SCOUT) {
             if (index == 0) return Drop(IRON_HELM, 1, 350, 3);
@@ -492,12 +583,10 @@ contract IdleIslesContent is IIdleIslesContent {
             if (index == 3) return Drop(HOLLOW_SEED, 1, 70, 4);
         }
         if (activityId == ACTIVITY_GOBLIN_FORAGER) {
-            if (index == 0) return Drop(PINE_LOG, 1, 1500, 1);
-            if (index == 1) return Drop(RUNE_DUST, 1, 500, 2);
+            if (index == 0) return Drop(RUNE_DUST, 1, 500, 2);
         }
         if (activityId == ACTIVITY_GIANT_SPIDER) {
-            if (index == 0) return Drop(RAW_COD, 1, 1000, 1);
-            if (index == 1) return Drop(COAL_ORE, 1, 500, 2);
+            if (index == 0) return Drop(COAL_ORE, 1, 500, 2);
         }
         if (activityId == ACTIVITY_DIRE_WOLF) {
             if (index == 0) return Drop(RAW_TUNA, 1, 1500, 1);
