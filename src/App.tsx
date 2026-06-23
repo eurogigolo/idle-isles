@@ -207,7 +207,12 @@ function App() {
                 activity={activity}
                 game={game}
                 key={activity.id}
-                onStart={() => runAction(() => startActivity(game, activity.id))}
+                onStart={() =>
+                  runAction(
+                    () => startActivity(game, activity.id),
+                    game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
+                  )
+                }
               />
             ))}
           </div>
@@ -403,6 +408,10 @@ interface MissionCardProps {
 function MissionCard({ activity, game, onStart }: MissionCardProps) {
   const status = getActivityStatus(game, activity)
   const Icon = GROUP_ICONS[activity.group]
+  const activeMissionId = game.activeMission?.activityId
+  const isRunning = activeMissionId === activity.id
+  const canSwitchFromActiveMission = Boolean(activeMissionId && !isRunning)
+  const canAttemptStart = status.canStart || canSwitchFromActiveMission
 
   return (
     <article className="mission-card">
@@ -429,9 +438,9 @@ function MissionCard({ activity, game, onStart }: MissionCardProps) {
         </div>
       </dl>
       {!status.canStart && <small>{status.reasons.join(' ')}</small>}
-      <button disabled={!status.canStart || Boolean(game.activeMission)} onClick={onStart} type="button">
+      <button disabled={!canAttemptStart || isRunning} onClick={onStart} type="button">
         <Play size={16} />
-        Start
+        {isRunning ? 'Running' : canSwitchFromActiveMission ? 'Switch' : 'Start'}
       </button>
     </article>
   )

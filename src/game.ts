@@ -1460,14 +1460,20 @@ export function getActivityStatus(state: GameState, activity: ActivityDefinition
 
 export function startActivity(state: GameState, activityId: ActivityId, now = Date.now()): GameState {
   const activity = getActivityById(activityId)
-  const status = getActivityStatus(state, activity)
+  if (state.activeMission?.activityId === activityId) {
+    return applyClaim(state, now)
+  }
+
+  const previousActivity = state.activeMission ? getActivityById(state.activeMission.activityId) : null
+  const settledState = state.activeMission ? applyClaim(state, now) : state
+  const status = getActivityStatus(settledState, activity)
   if (!status.canStart) {
     throw new Error(status.reasons[0] ?? 'Mission cannot start.')
   }
 
   return addLog(
     {
-      ...state,
+      ...settledState,
       activeMission: {
         activityId,
         startedAt: now,
@@ -1475,7 +1481,9 @@ export function startActivity(state: GameState, activityId: ActivityId, now = Da
       },
       lastSeenAt: now,
     },
-    `Mission started: ${activity.name}.`,
+    previousActivity
+      ? `Mission switched: ${previousActivity.name} -> ${activity.name}.`
+      : `Mission started: ${activity.name}.`,
   )
 }
 
