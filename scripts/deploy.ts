@@ -51,7 +51,7 @@ async function main() {
     const chainId = await publicClient.getChainId();
     const deployerAddress = deployer.account.address;
 
-    console.log(`Deploying Idle Isles to ${connection.networkName} (${chainId})`);
+    console.log(`Deploying Idle Galactica to ${connection.networkName} (${chainId})`);
     console.log(`Deployer: ${deployerAddress}`);
     console.log(`Metadata URI: ${metadataUri}`);
     console.log(`Confirmations: ${confirmations}`);

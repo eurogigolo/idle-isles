@@ -58,7 +58,7 @@ const server = createServer(async (request, response) => {
 });
 
 server.listen(port, host, () => {
-  console.log(`Idle Isles serving ${root} at http://${host}:${port}`);
+  console.log(`Idle Galactica serving ${root} at http://${host}:${port}`);
 });
 
 async function existingFilePath(requestedPath, pathname) {
