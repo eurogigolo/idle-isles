@@ -261,6 +261,11 @@ export async function connectMossWallet(): Promise<Address | null> {
   return status.status === 'connected' ? toAddress(status.address) : null
 }
 
+export async function openMossDeposit(): Promise<void> {
+  await initialiseMossWallet()
+  await mega.deposit()
+}
+
 export async function hasMossGameplaySession(account?: Address | null): Promise<boolean> {
   const address = getIdleIslesAddress()
   if (!address) {

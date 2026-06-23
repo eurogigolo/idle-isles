@@ -5,6 +5,7 @@ import {
   CircleDollarSign,
   Clock,
   Coins,
+  Copy,
   Fish,
   Flame,
   Gem,
@@ -88,6 +89,7 @@ import {
   grantMossGameplaySession,
   hasMossGameplaySession,
   initialiseMossWallet,
+  openMossDeposit,
   readChainSnapshot,
   toAddress,
   writeBuyOrder,
@@ -1386,6 +1388,41 @@ function App() {
     }
   }
 
+  async function copyAccountAddress() {
+    if (!account) {
+      setWalletNote(walletMode === 'moss' ? 'Connect MOSS first' : 'Connect wallet first')
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(account)
+      setWalletNote('Address copied')
+    } catch {
+      setWalletNote(account)
+    }
+  }
+
+  async function fundMossWallet() {
+    if (walletMode !== 'moss') {
+      setWalletNote('Select MOSS first')
+      return
+    }
+
+    try {
+      setWalletNote('Opening MOSS funding')
+      showPendingAction({
+        title: 'Opening MOSS',
+        detail: 'Use the MOSS funding screen to add funds.',
+      })
+      await openMossDeposit()
+      setWalletNote('MOSS funding opened')
+    } catch (error) {
+      setWalletNote(formatChainError(error))
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
   async function enableMossGameplaySession() {
     if (walletMode !== 'moss') {
       setWalletNote('Select MOSS first')
@@ -1527,6 +1564,28 @@ function App() {
               {account ? shortAddress(account) : walletMode === 'moss' ? 'Connect MOSS' : 'Connect'}
             </span>
           </button>
+          {account && (
+            <button
+              type="button"
+              className="icon-text-button secondary"
+              onClick={() => void copyAccountAddress()}
+              title={account}
+            >
+              <Copy size={17} />
+              <span>Copy</span>
+            </button>
+          )}
+          {walletMode === 'moss' && (
+            <button
+              type="button"
+              className="icon-text-button secondary"
+              onClick={() => void fundMossWallet()}
+              disabled={chainBusy || !mossReady}
+            >
+              <Coins size={17} />
+              <span>Fund MOSS</span>
+            </button>
+          )}
           <button type="button" className="icon-text-button secondary" onClick={addMegaEth}>
             <Landmark size={17} />
             <span>
