@@ -424,17 +424,19 @@ function App() {
           <div className="trade-list">
             {game.marketOrders.map((order) => (
               <div className="trade-row" key={order.id}>
-                <div>
+                <div className="trade-item">
                   <strong>{ITEMS[order.itemId].name}</strong>
-                  <span>{order.quantity} available</span>
                 </div>
-                <button
-                  disabled={order.quantity <= 0 || game.cargo.credits < order.unitPrice}
-                  onClick={() => runAction(() => buyRelayItem(game, order.id))}
-                  type="button"
-                >
-                  Buy {order.unitPrice}
-                </button>
+                <div className="trade-action">
+                  <span>{order.quantity} available</span>
+                  <button
+                    disabled={order.quantity <= 0 || game.cargo.credits < order.unitPrice}
+                    onClick={() => runAction(() => buyRelayItem(game, order.id))}
+                    type="button"
+                  >
+                    Buy <span aria-hidden="true" className="button-divider" /> {order.unitPrice}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

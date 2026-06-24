@@ -1657,7 +1657,37 @@ select {
 }
 
 .trade-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.55rem;
   padding: 0.48rem;
+}
+
+.trade-item {
+  min-width: 0;
+}
+
+.trade-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.trade-action span {
+  white-space: nowrap;
+}
+
+.trade-action button {
+  min-width: 4.8rem;
+}
+
+.button-divider {
+  display: inline-block;
+  width: 1px;
+  height: 0.95rem;
+  background: rgba(220, 231, 245, 0.42);
 }
 
 .event-log {
