@@ -729,7 +729,6 @@ function App() {
               data-tooltip={MOSS_GAMEPLAY_SESSION_TOOLTIP}
               disabled={chainBusy || !chainAccount || !mossReady}
               onClick={() => void enableMossGameplaySession()}
-              title={MOSS_GAMEPLAY_SESSION_TOOLTIP}
               type="button"
             >
               <Sparkles size={16} />
