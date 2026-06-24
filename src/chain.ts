@@ -65,6 +65,7 @@ export interface ChainWriteRequest {
     | 'startGathering'
     | 'startProduction'
     | 'startCombat'
+    | 'startBossEncounter'
     | 'claimMission'
     | 'stopMission'
     | 'equipModule'
@@ -102,6 +103,7 @@ export const MEGAETH_TESTNET_PARAMS = {
 let mossInitialisePromise: Promise<void> | null = null
 
 const IDLE_GALACTICA_ABI = parseAbi([
+  'function BOSS_ENCOUNTER_COST() view returns (uint256)',
   'function activeMission(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
   'function balanceOf(address account, uint256 id) view returns (uint256)',
   'function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])',
@@ -120,6 +122,7 @@ const IDLE_GALACTICA_ABI = parseAbi([
   'function setApprovalForAll(address operator, bool approved)',
   'function setCombatSettings(bool autoRepair, uint16 stopAtHull, uint256 repairItemId, uint16 maxRepairItemsPerClaim)',
   'function skillXp(address player, uint8 skill) view returns (uint64)',
+  'function startBossEncounter()',
   'function startCombat(uint16 activityId)',
   'function startGathering(uint16 activityId)',
   'function startProduction(uint16 activityId)',
@@ -172,6 +175,7 @@ export const MOSS_GAMEPLAY_CALLS = [
   'startGathering(uint16)',
   'startProduction(uint16)',
   'startCombat(uint16)',
+  'startBossEncounter()',
   'claimMission()',
   'stopMission()',
   'equipModule(uint256)',
@@ -376,6 +380,22 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
   }
 }
 
+export async function readBossEncounterCost(): Promise<number | null> {
+  const gameAddress = getIdleGalacticaAddress()
+  if (!gameAddress) return null
+
+  try {
+    const cost = await publicClient.readContract({
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'BOSS_ENCOUNTER_COST',
+    })
+    return safeNumber(cost)
+  } catch {
+    return null
+  }
+}
+
 export async function writeChainRequest(request: ChainWriteRequest): Promise<Hash> {
   switch (request.functionName) {
     case 'createProfile':
@@ -390,6 +410,8 @@ export async function writeChainRequest(request: ChainWriteRequest): Promise<Has
       return submitGameWrite('startProduction', [Number(request.args?.[0] ?? 0)])
     case 'startCombat':
       return submitGameWrite('startCombat', [Number(request.args?.[0] ?? 0)])
+    case 'startBossEncounter':
+      return submitGameWrite('startBossEncounter', [])
     case 'equipModule':
       return submitGameWrite('equipModule', [BigInt(request.args?.[0] as bigint)])
     case 'unequipModule':
@@ -426,6 +448,10 @@ export async function writeStopMission(): Promise<Hash> {
 
 export async function writeClaimMission(): Promise<Hash> {
   return submitGameWrite('claimMission', [])
+}
+
+export async function writeStartBossEncounter(): Promise<Hash> {
+  return submitGameWrite('startBossEncounter', [])
 }
 
 export async function writeEquipModule(itemId: ItemId): Promise<Hash> {
@@ -491,6 +517,10 @@ export async function writeMossClaimMissionBatch(count: number): Promise<Hash> {
 
 export async function writeMossStopMission(): Promise<Hash> {
   return writeMossGameContract('stopMission', [])
+}
+
+export async function writeMossStartBossEncounter(): Promise<Hash> {
+  return writeMossGameContract('startBossEncounter', [])
 }
 
 export async function writeMossEquipModule(itemId: ItemId): Promise<Hash> {

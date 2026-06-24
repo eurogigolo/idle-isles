@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { GameScene } from './GameScene'
+import { GridBossBattle, type GridBossResult } from './GridBossBattle'
 import type { Address } from './chain'
 import {
   ACTIVITIES,
@@ -64,6 +65,8 @@ import {
 } from './game'
 
 const GROUPS: ActivityGroup[] = ['Gathering', 'Production', 'Combat']
+type MissionTab = ActivityGroup | 'Boss'
+const MISSION_TABS: MissionTab[] = [...GROUPS, 'Boss']
 type MissionSkillFilter = SkillId | 'all'
 type WalletMode = 'injected' | 'moss'
 type ChainModule = typeof import('./chain')
@@ -89,6 +92,10 @@ const GROUP_ICONS: Record<ActivityGroup, typeof Activity> = {
   Production: Factory,
   Combat: Crosshair,
 }
+const MISSION_TAB_ICONS: Record<MissionTab, typeof Activity> = {
+  ...GROUP_ICONS,
+  Boss: Sparkles,
+}
 
 const SKILL_ICONS: Record<SkillId, typeof Activity> = {
   asteroidMining: Gauge,
@@ -112,12 +119,13 @@ const CHAIN_CLAIM_CYCLE_CAP: Record<ActivityGroup, number> = {
   Combat: 200,
 }
 const MOSS_MAX_CLAIM_BATCH_CALLS = 5
+const GRID_BOSS_COST = 10_000
 const MOSS_GAMEPLAY_SESSION_TOOLTIP =
-  'Allows MOSS to submit approved game actions for 24 hours without repeated popups: mission actions, repairs, combat settings, sector travel, and Trade Relay listings. First-time Trade Relay escrow approval may still ask for confirmation.'
+  'Allows MOSS to submit approved game actions for 24 hours without repeated popups: mission actions, repairs, combat settings, sector travel, boss encounters, and Trade Relay listings. First-time Trade Relay escrow approval may still ask for confirmation.'
 
 function App() {
   const [game, setGame] = useState<GameState>(() => loadGame())
-  const [selectedGroup, setSelectedGroup] = useState<ActivityGroup>('Gathering')
+  const [selectedTab, setSelectedTab] = useState<MissionTab>('Gathering')
   const [selectedSkillFilters, setSelectedSkillFilters] = useState<Record<ActivityGroup, MissionSkillFilter>>({
     Gathering: 'all',
     Production: 'all',
@@ -131,6 +139,8 @@ function App() {
   const [chainBusy, setChainBusy] = useState(false)
   const [mossReady, setMossReady] = useState(false)
   const [mossSessionReady, setMossSessionReady] = useState(false)
+  const [chainBossEncounterCost, setChainBossEncounterCost] = useState<number | null>(null)
+  const [bossBattleId, setBossBattleId] = useState<number | null>(null)
   const [notice, setNotice] = useState(() =>
     isChainModeConfigured()
       ? 'Local v2 simulation active. Chain mode is available.'
@@ -190,6 +200,8 @@ function App() {
   const claimBatchCount =
     chainMode && walletMode === 'moss' ? getMossClaimBatchCount(activeActivity, preview.cycles) : 1
   const sector = getSectorById(game.currentSectorId)
+  const selectedGroup = selectedTab === 'Boss' ? 'Combat' : selectedTab
+  const isBossTab = selectedTab === 'Boss'
   const selectedSkillFilter = selectedSkillFilters[selectedGroup]
   const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
   const groupActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
@@ -202,8 +214,10 @@ function App() {
   )
   const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
   const progressPct = getMissionProgress(activeActivity, game, now)
+  const bossEncounterCost = chainBossEncounterCost ?? GRID_BOSS_COST
 
   function setMissionSkillFilter(filter: MissionSkillFilter) {
+    if (isBossTab) return
     setSelectedSkillFilters((current) => ({
       ...current,
       [selectedGroup]: filter,
@@ -224,6 +238,7 @@ function App() {
       setChainMode(false)
       setChainHasProfile(false)
       setMossSessionReady(false)
+      setChainBossEncounterCost(null)
       setGame(loadGame())
       setNotice('Local v2 simulation active.')
       return
@@ -244,6 +259,7 @@ function App() {
     setChainAccount(null)
     setChainHasProfile(false)
     setMossSessionReady(false)
+    setChainBossEncounterCost(null)
     if (nextMode === 'injected') {
       setMossReady(false)
     }
@@ -285,9 +301,13 @@ function App() {
     }
 
     const chain = await loadChain()
-    const snapshot = await chain.readChainSnapshot(account)
+    const [snapshot, bossCost] = await Promise.all([
+      chain.readChainSnapshot(account),
+      chain.readBossEncounterCost(),
+    ])
     setGame(snapshot.game)
     setChainHasProfile(snapshot.hasProfile)
+    setChainBossEncounterCost(bossCost)
     setNotice(
       snapshot.hasProfile
         ? `${success} Block ${snapshot.blockNumber.toString()}.`
@@ -577,6 +597,44 @@ function App() {
     runAction(() => sellCargoItem(game, itemId))
   }
 
+  function handleBossFight() {
+    if (!chainMode) {
+      setNotice('Switch to Chain Mode before starting a Grid Boss Encounter.')
+      return
+    }
+    if (!requireChainProfile()) return
+    if (chainBossEncounterCost === null) {
+      setNotice('The configured game contract does not support Grid Boss Encounters yet.')
+      return
+    }
+    if (game.cargo.credits < bossEncounterCost) {
+      setNotice(`${bossEncounterCost.toLocaleString()} Credits required for a Grid Boss Encounter.`)
+      return
+    }
+
+    void runChainAction(
+      async () => {
+        const chain = await loadChain()
+        const hash =
+          walletMode === 'moss'
+            ? await chain.writeMossStartBossEncounter()
+            : await chain.writeStartBossEncounter()
+        setBossBattleId(Date.now())
+        return hash
+      },
+      `${bossEncounterCost.toLocaleString()} Credits spent. Grid Boss Encounter initialized.`,
+    )
+  }
+
+  function handleBossBattleComplete(result: GridBossResult) {
+    setBossBattleId(null)
+    setNotice(
+      result === 'win'
+        ? 'Grid Boss Encounter complete. Returned to command.'
+        : 'Grid Boss Encounter ended. Returned to command.',
+    )
+  }
+
   function editCombatSettings(patch: Partial<CombatSettings>) {
     setGame(updateCombatSettings(game, patch))
   }
@@ -666,6 +724,9 @@ function App() {
 
   return (
     <main className="app-shell">
+      {bossBattleId !== null && (
+        <GridBossBattle key={bossBattleId} onComplete={handleBossBattleComplete} />
+      )}
       <header className="topbar">
         <div>
           <p className="eyebrow">On-chain space idle RPG</p>
@@ -857,57 +918,71 @@ function App() {
           </div>
 
           <div className="mission-header">
-            <PanelTitle icon={GROUP_ICONS[selectedGroup]} title="Missions" />
+            <PanelTitle icon={MISSION_TAB_ICONS[selectedTab]} title="Missions" />
             <div className="segmented">
-              {GROUPS.map((group) => (
+              {MISSION_TABS.map((tab) => (
                 <button
-                  className={selectedGroup === group ? 'selected' : ''}
-                  key={group}
-                  onClick={() => setSelectedGroup(group)}
+                  className={selectedTab === tab ? 'selected' : ''}
+                  key={tab}
+                  onClick={() => setSelectedTab(tab)}
                   type="button"
                 >
-                  {group}
+                  {tab}
                 </button>
               ))}
             </div>
           </div>
 
-          <div className={`mission-skill-filter filter-${selectedGroup.toLowerCase()}`}>
-            <span>Skill</span>
-            <button
-              className={selectedSkillFilter === 'all' ? 'selected' : ''}
-              onClick={() => setMissionSkillFilter('all')}
-              type="button"
-            >
-              All
-              <b>{groupActivities.length}</b>
-            </button>
-            {groupSkills.map((skill) => {
-              const skillActivityCount = groupActivities.filter((activity) => activityMatchesSkill(activity, skill.id)).length
-              return (
+          {isBossTab ? (
+            <BossEncounterPanel
+              chainMode={chainMode}
+              chainBusy={chainBusy}
+              cost={bossEncounterCost}
+              contractReady={chainBossEncounterCost !== null}
+              credits={game.cargo.credits}
+              hasProfile={chainHasProfile}
+              onFight={handleBossFight}
+            />
+          ) : (
+            <>
+              <div className={`mission-skill-filter filter-${selectedGroup.toLowerCase()}`}>
+                <span>Skill</span>
                 <button
-                  className={selectedSkillFilter === skill.id ? 'selected' : ''}
-                  key={skill.id}
-                  onClick={() => setMissionSkillFilter(skill.id)}
+                  className={selectedSkillFilter === 'all' ? 'selected' : ''}
+                  onClick={() => setMissionSkillFilter('all')}
                   type="button"
                 >
-                  {skill.name}
-                  <b>{skillActivityCount}</b>
+                  All
+                  <b>{groupActivities.length}</b>
                 </button>
-              )
-            })}
-          </div>
+                {groupSkills.map((skill) => {
+                  const skillActivityCount = groupActivities.filter((activity) => activityMatchesSkill(activity, skill.id)).length
+                  return (
+                    <button
+                      className={selectedSkillFilter === skill.id ? 'selected' : ''}
+                      key={skill.id}
+                      onClick={() => setMissionSkillFilter(skill.id)}
+                      type="button"
+                    >
+                      {skill.name}
+                      <b>{skillActivityCount}</b>
+                    </button>
+                  )
+                })}
+              </div>
 
-          <div className="mission-grid">
-            {visibleActivities.map((activity) => (
-              <MissionCard
-                activity={activity}
-                game={game}
-                key={activity.id}
-                onStart={() => handleMissionStart(activity)}
-              />
-            ))}
-          </div>
+              <div className="mission-grid">
+                {visibleActivities.map((activity) => (
+                  <MissionCard
+                    activity={activity}
+                    game={game}
+                    key={activity.id}
+                    onStart={() => handleMissionStart(activity)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
         </section>
 
         <aside className="panel ship-panel">
@@ -1157,6 +1232,61 @@ interface MissionCardProps {
   activity: ActivityDefinition
   game: GameState
   onStart: () => void
+}
+
+interface BossEncounterPanelProps {
+  chainBusy: boolean
+  chainMode: boolean
+  contractReady: boolean
+  cost: number
+  credits: number
+  hasProfile: boolean
+  onFight: () => void
+}
+
+function BossEncounterPanel({
+  chainBusy,
+  chainMode,
+  contractReady,
+  cost,
+  credits,
+  hasProfile,
+  onFight,
+}: BossEncounterPanelProps) {
+  const hasEnoughCredits = credits >= cost
+  const disabled = chainBusy || !chainMode || !contractReady || !hasProfile || !hasEnoughCredits
+
+  return (
+    <article className="boss-encounter-card">
+      <header>
+        <Sparkles size={18} />
+        <div>
+          <h3>Rift Warden</h3>
+          <span>Grid Boss Encounter</span>
+        </div>
+        <b>{cost.toLocaleString()} Credits</b>
+      </header>
+      <p>
+        Spend Credits on-chain to open a real-time 3 by 6 grid duel. Your ship holds the
+        left three columns while the boss controls the right side.
+      </p>
+      <div className="boss-encounter-rules">
+        <span>Move: WASD / Arrow keys</span>
+        <span>Fire: Space / Enter</span>
+        <span>No rewards or loss penalties in this MVP</span>
+      </div>
+      <button disabled={disabled} onClick={onFight} type="button">
+        <Crosshair size={16} />
+        Fight
+      </button>
+      {!chainMode && <small>Chain Mode required for the 10,000 Credit transaction.</small>}
+      {chainMode && !contractReady && <small>Fresh boss encounter contract deployment required.</small>}
+      {chainMode && !hasProfile && <small>Create an on-chain ship profile first.</small>}
+      {chainMode && contractReady && hasProfile && !hasEnoughCredits && (
+        <small>{cost.toLocaleString()} Credits required. Current balance: {credits.toLocaleString()}.</small>
+      )}
+    </article>
+  )
 }
 
 interface RequirementItem {

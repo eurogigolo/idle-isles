@@ -74,6 +74,7 @@ contract IdleGalactica is ERC1155 {
     }
 
     uint256 internal constant CREDITS = 1;
+    uint256 public constant BOSS_ENCOUNTER_COST = 10_000;
     uint256 internal constant REPAIR_GEL = 250;
     uint256 internal constant OXYGEN_CELL = 251;
     uint256 internal constant LIGHT_TURRET = 404;
@@ -126,6 +127,7 @@ contract IdleGalactica is ERC1155 {
     event ModuleUnequipped(address indexed player, uint8 indexed slot, uint256 indexed itemId);
     event HullRepaired(address indexed player, uint256 indexed itemId, uint256 hullRestored);
     event SectorTraveled(address indexed player, uint8 indexed sectorId, uint256 cost);
+    event BossEncounterStarted(address indexed player, uint256 cost);
     event CombatSettingsUpdated(
         address indexed player,
         bool autoRepair,
@@ -178,6 +180,17 @@ contract IdleGalactica is ERC1155 {
 
     function startCombat(uint16 activityId) external {
         _startMission(activityId, KIND_COMBAT);
+    }
+
+    function startBossEncounter() external {
+        address player = msg.sender;
+        _requireProfile(player);
+        _settle(player);
+
+        if (balanceOf(player, CREDITS) < BOSS_ENCOUNTER_COST) revert CargoLow();
+        _burn(player, CREDITS, BOSS_ENCOUNTER_COST);
+
+        emit BossEncounterStarted(player, BOSS_ENCOUNTER_COST);
     }
 
     function claimMission() external {
