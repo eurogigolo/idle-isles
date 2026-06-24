@@ -5,6 +5,7 @@ import {
   http,
   isAddress,
   parseAbi,
+  parseEther,
   type Hash,
   type PublicClient,
   type WalletClient,
@@ -83,6 +84,7 @@ const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const MARKET_READ_LIMIT = 120n
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
+const MOSS_MAX_GAS_ALLOWANCE = parseEther('0.0005')
 
 export const MEGAETH_TESTNET_PARAMS = {
   chainId: MEGAETH_CHAIN_ID_HEX,
@@ -812,36 +814,61 @@ async function callMossContract({
     abi,
     functionName,
     args,
+    maxGasAllowance: MOSS_MAX_GAS_ALLOWANCE,
     silent,
     silentUIApproveFallback: silent,
   }
 
   try {
     const result = await mega.callContract(request)
+    if (silent && shouldRetryMossVisibleApproval(result)) {
+      return callMossVisibleContract(address, abi, functionName, args)
+    }
     return requireMossTransaction(result)
   } catch (error) {
     if (!silent || !isRecoverableMossSilentError(error)) {
       throw error
     }
 
-    const result = await mega.callContract({
-      address,
-      abi,
-      functionName,
-      args,
-      silent: false,
-      silentUIApproveFallback: false,
-    })
-    return requireMossTransaction(result)
+    return callMossVisibleContract(address, abi, functionName, args)
   }
+}
+
+async function callMossVisibleContract(
+  address: Address,
+  abi: unknown,
+  functionName: string,
+  args: unknown[],
+): Promise<Hash> {
+  const result = await mega.callContract({
+    address,
+    abi,
+    functionName,
+    args,
+    maxGasAllowance: MOSS_MAX_GAS_ALLOWANCE,
+    silent: false,
+    silentUIApproveFallback: false,
+  })
+  return requireMossTransaction(result)
+}
+
+function shouldRetryMossVisibleApproval(result: TransactionResult): boolean {
+  if (result.status === 'approved' || result.silentHasUsedFallback === true) return false
+  if (result.status === 'cancelled') return false
+  return result.error ? isRecoverableMossSilentMessage(result.error) : true
 }
 
 function isRecoverableMossSilentError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
+  return isRecoverableMossSilentMessage(message)
+}
+
+function isRecoverableMossSilentMessage(message: string): boolean {
   const normalized = message.toLowerCase()
 
   return [
     'intent signature is invalid',
+    'max gas',
     'preflight failed',
     'wallet_sendcalls',
     'permission',
