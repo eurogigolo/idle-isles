@@ -50,6 +50,7 @@ import {
   type ActivityGroup,
   type GameState,
   type ItemId,
+  type ModuleStats,
   type SkillId,
 } from './game'
 
@@ -142,7 +143,7 @@ function App() {
 
               return (
                 <div className="skill-row" key={skill.id}>
-                  <Icon size={18} />
+                  <Icon size={15} />
                   <div>
                     <strong>{skill.name}</strong>
                     <span>{skill.category}</span>
@@ -162,26 +163,57 @@ function App() {
         <section className="panel mission-panel">
           <GameScene activity={activeActivity} isActive={Boolean(game.activeMission)} progress={progressPct} />
 
-          <div className="active-mission">
-            <div>
-              <span>Current Mission</span>
-              <strong>{activeActivity ? activeActivity.name : 'No active mission'}</strong>
+          <div className={game.activeMission ? 'active-mission active' : 'active-mission'}>
+            <div className="active-mission-top">
+              <div>
+                <span>Current Mission</span>
+                <strong>{activeActivity ? activeActivity.name : 'No active mission'}</strong>
+              </div>
+              <div className="mission-actions">
+                <button
+                  disabled={!game.activeMission || preview.cycles === 0}
+                  onClick={() => runAction(() => applyClaim(game), 'Mission cycles claimed.')}
+                  type="button"
+                >
+                  Claim {preview.cycles > 0 ? `(${preview.cycles})` : ''}
+                </button>
+                <button
+                  aria-label="Stop mission"
+                  disabled={!game.activeMission}
+                  onClick={() => runAction(() => stopActivity(game))}
+                  title="Stop mission"
+                  type="button"
+                >
+                  <Square size={16} />
+                </button>
+              </div>
             </div>
-            <div className="mission-actions">
-              <button
-                disabled={!game.activeMission || preview.cycles === 0}
-                onClick={() => runAction(() => applyClaim(game), 'Mission cycles claimed.')}
-                type="button"
-              >
-                Claim {preview.cycles > 0 ? `(${preview.cycles})` : ''}
-              </button>
-              <button
-                disabled={!game.activeMission}
-                onClick={() => runAction(() => stopActivity(game))}
-                type="button"
-              >
-                <Square size={16} />
-              </button>
+
+            <div className="mission-progress-large">
+              <span style={{ width: `${progressPct}%` }} />
+            </div>
+
+            <div className="mission-readouts">
+              <div>
+                <span>Cycle</span>
+                <strong>{activeActivity ? `${Math.round(activeActivity.cycleMs / 1000)}s` : '--'}</strong>
+              </div>
+              <div>
+                <span>Pending</span>
+                <strong>{preview.cycles}</strong>
+              </div>
+              <div>
+                <span>Hull Delta</span>
+                <strong>{preview.hullDamage > 0 ? `-${preview.hullDamage}` : 'Stable'}</strong>
+              </div>
+              <div className="wide">
+                <span>Per Cycle</span>
+                <strong>{activeActivity ? formatRewards(activeActivity.rewards) : 'No output'}</strong>
+              </div>
+              <div className="wide">
+                <span>Claimable</span>
+                <strong>{preview.cycles > 0 ? formatRewards(preview.rewards) : 'No claim ready'}</strong>
+              </div>
             </div>
           </div>
 
@@ -220,7 +252,7 @@ function App() {
 
         <aside className="panel ship-panel">
           <PanelTitle icon={Rocket} title="Ship Status" />
-          <div className="hull-card">
+          <div className={hullPct <= 35 ? 'hull-card low-hull' : 'hull-card'}>
             <div className="hull-line">
               <span>Hull Integrity</span>
               <strong>{Math.ceil(game.ship.currentHull)} / {game.ship.maxHull}</strong>
@@ -275,9 +307,10 @@ function App() {
             {MODULE_SLOTS.map((slot) => {
               const itemId = game.ship.modules[slot]
               return (
-                <div className="module-slot" key={slot}>
+                <div className={`module-slot slot-${slot} ${itemId ? 'filled' : ''}`} key={slot}>
                   <span>{formatModuleSlot(slot)}</span>
                   <strong>{itemId ? ITEMS[itemId].name : 'Empty'}</strong>
+                  <em>{itemId ? formatModuleStats(ITEMS[itemId].stats) : 'Offline'}</em>
                   <button
                     disabled={!itemId}
                     onClick={() => runAction(() => unequipModule(game, slot))}
@@ -360,7 +393,7 @@ function App() {
           <PanelTitle icon={Activity} title="Event Log" />
           <div className="event-log">
             {game.eventLog.map((entry, index) => (
-              <p key={`${entry}-${index}`}>{entry}</p>
+              <p className={`event-${getEventLogKind(entry)}`} key={`${entry}-${index}`}>{entry}</p>
             ))}
           </div>
         </section>
@@ -378,7 +411,7 @@ interface StatPillProps {
 function StatPill({ icon: Icon, label, value }: StatPillProps) {
   return (
     <div className="stat-pill">
-      <Icon size={18} />
+      <Icon size={16} />
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
@@ -393,7 +426,7 @@ interface PanelTitleProps {
 function PanelTitle({ icon: Icon, title }: PanelTitleProps) {
   return (
     <div className="panel-title">
-      <Icon size={18} />
+      <Icon size={16} />
       <h2>{title}</h2>
     </div>
   )
@@ -414,9 +447,9 @@ function MissionCard({ activity, game, onStart }: MissionCardProps) {
   const canAttemptStart = status.canStart || canSwitchFromActiveMission
 
   return (
-    <article className="mission-card">
+    <article className={isRunning ? 'mission-card running' : 'mission-card'}>
       <header>
-        <Icon size={18} />
+        <Icon size={16} />
         <div>
           <h3>{activity.name}</h3>
           <span>{getSectorById(activity.sectorId).name} - Tier {activity.tier}</span>
@@ -487,9 +520,53 @@ function formatXp(activity: ActivityDefinition): string {
 }
 
 function formatRewards(rewards: Partial<Record<ItemId, number>>): string {
-  return Object.entries(rewards)
+  const entries = Object.entries(rewards)
+  if (entries.length === 0) return 'None'
+
+  return entries
     .map(([itemId, amount]) => formatItemQuantity(itemId as ItemId, amount ?? 0))
     .join(', ')
+}
+
+function formatModuleStats(stats: ModuleStats = {}): string {
+  const labels = [
+    ['damage', 'DMG'],
+    ['accuracy', 'ACC'],
+    ['shielding', 'SHD'],
+    ['armor', 'ARM'],
+    ['hull', 'HULL'],
+    ['speed', 'SPD'],
+    ['utility', 'UTIL'],
+  ] as const
+
+  const summary = labels
+    .filter(([key]) => stats[key])
+    .map(([key, label]) => `+${stats[key]} ${label}`)
+
+  return summary.length > 0 ? summary.join(' / ') : 'No stat bonus'
+}
+
+function getEventLogKind(entry: string): string {
+  const activity = ACTIVITIES.find((candidate) => entry.startsWith(`${candidate.name}:`))
+  if (activity) return activity.group.toLowerCase()
+
+  const normalized = entry.toLowerCase()
+  if (normalized.includes('hull failure') || normalized.includes('depleted') || normalized.includes('safety')) {
+    return 'danger'
+  }
+  if (normalized.includes('bought') || normalized.includes('sold') || normalized.includes('trade relay')) {
+    return 'market'
+  }
+  if (
+    normalized.includes('installed') ||
+    normalized.includes('removed') ||
+    normalized.includes('restored') ||
+    normalized.includes('ship routed') ||
+    normalized.includes('mission')
+  ) {
+    return 'ship'
+  }
+  return 'system'
 }
 
 function loadGame(): GameState {

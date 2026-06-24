@@ -16,8 +16,16 @@ export function GameScene({ activity, isActive, progress }: GameSceneProps) {
     <div className={`space-scene ${sceneClass}`}>
       <div className="starfield" />
       <div className="scene-aurora" />
+      <div className="scene-grid" />
+      <div className="scene-scanlines" />
       <div className="orbit-ring outer" />
       <div className="orbit-ring inner" />
+      <div className="scene-particles">
+        <span className="particle one" />
+        <span className="particle two" />
+        <span className="particle three" />
+        <span className="particle four" />
+      </div>
       <SceneBody mode={sceneMode} />
       <div className={isActive ? 'ship active' : 'ship'}>
         <span className="ship-nose" />
@@ -148,12 +156,15 @@ function SceneEffect({ mode, isActive }: { mode: SceneMode; isActive: boolean })
           <span className="bolt one" />
           <span className="bolt two" />
           <span className="impact-pulse" />
+          <span className="damage-flare one" />
+          <span className="damage-flare two" />
         </>
       ) : mode === 'production' ? (
         <>
           <span className="fab-beam one" />
           <span className="fab-beam two" />
           <span className="assembly-spark" />
+          <span className="assembly-spark two" />
         </>
       ) : mode === 'nebula-siphoning' ? (
         <>
