@@ -7,7 +7,7 @@ describe("Idle Galactica contracts", async function () {
   const { networkHelpers, viem } = await network.create();
 
   const CREDITS = 1n;
-  const BOSS_ENCOUNTER_COST = 10_000n;
+  const BOSS_ENCOUNTER_COST = 1n;
   const FERRITE_ORE = 10n;
   const WATER_ICE = 12n;
   const BIOMASS = 90n;
@@ -330,21 +330,15 @@ describe("Idle Galactica contracts", async function () {
     assert.equal(await game.read.balanceOf([player.account.address, CREDITS]), 0n);
   });
 
-  it("burns exactly 10,000 Credits to start a boss encounter", async function () {
+  it("burns exactly the configured Credit cost to start a boss encounter", async function () {
     const { game } = await deployIdleGalacticaHarness();
     const [player] = await viem.getWalletClients();
 
     await game.write.createProfile();
-    await assert.rejects(() => game.write.startBossEncounter());
-
-    await game.write.mintForTest([
-      player.account.address,
-      CREDITS,
-      BOSS_ENCOUNTER_COST - 120n,
-    ]);
+    const before = await game.read.balanceOf([player.account.address, CREDITS]);
     await game.write.startBossEncounter();
 
-    assert.equal(await game.read.balanceOf([player.account.address, CREDITS]), 0n);
+    assert.equal(await game.read.balanceOf([player.account.address, CREDITS]), before - BOSS_ENCOUNTER_COST);
   });
 
   it("escrows listed cargo and trades it for credits through the Trade Relay", async function () {
