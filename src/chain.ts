@@ -2,11 +2,15 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  http,
+  isAddress,
   parseAbi,
   type Hash,
   type PublicClient,
   type WalletClient,
 } from 'viem'
+import { mega, type ConnectionStatus, type Permission, type TransactionResult } from '@megaeth-labs/wallet-sdk'
+import { megaethTestnet } from 'viem/chains'
 import {
   CONTRACT_ACTIVITY_IDS,
   CONTRACT_ITEM_IDS,
@@ -72,12 +76,27 @@ export interface ChainWriteRequest {
 
 interface BrowserClients {
   account: Address
-  publicClient: PublicClient
   walletClient: WalletClient
 }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const MARKET_READ_LIMIT = 120n
+export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
+export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
+
+export const MEGAETH_TESTNET_PARAMS = {
+  chainId: MEGAETH_CHAIN_ID_HEX,
+  chainName: 'MegaETH Testnet',
+  nativeCurrency: {
+    name: 'Ether',
+    symbol: 'ETH',
+    decimals: 18,
+  },
+  rpcUrls: ['https://carrot.megaeth.com/rpc'],
+  blockExplorerUrls: ['https://megaeth-testnet-v2.blockscout.com'],
+}
+
+let mossInitialisePromise: Promise<void> | null = null
 
 const IDLE_GALACTICA_ABI = parseAbi([
   'function activeMission(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
@@ -113,6 +132,11 @@ const TRADE_RELAY_ABI = parseAbi([
   'function nextOrderId() view returns (uint256)',
   'function orders(uint256 orderId) view returns (address seller, uint256 itemId, uint128 priceEach, uint64 amountRemaining)',
 ])
+
+const publicClient = createPublicClient({
+  chain: megaethTestnet,
+  transport: http(),
+})
 
 const ITEM_BY_CHAIN_ID = new Map(
   (Object.entries(CONTRACT_ITEM_IDS) as [ItemId, bigint][]).map(([itemId, chainId]) => [
@@ -170,6 +194,74 @@ export async function connectWallet(): Promise<Address> {
   return requestWalletAccount()
 }
 
+export async function addMegaEthTestnet(): Promise<void> {
+  await getEthereumProvider().request({
+    method: 'wallet_addEthereumChain',
+    params: [MEGAETH_TESTNET_PARAMS],
+  })
+}
+
+export async function initialiseMossWallet(): Promise<void> {
+  mossInitialisePromise ??= mega
+    .initialise({
+      network: 'testnet',
+      logging: 'error',
+    })
+    .then(() => undefined)
+
+  return mossInitialisePromise
+}
+
+export async function getMossWalletStatus(): Promise<ConnectionStatus> {
+  await initialiseMossWallet()
+  return mega.status()
+}
+
+export async function connectMossWallet(): Promise<Address | null> {
+  await initialiseMossWallet()
+  const status = await mega.connect()
+  return status.status === 'connected' ? toAddress(status.address) : null
+}
+
+export async function openMossDeposit(): Promise<void> {
+  await initialiseMossWallet()
+  await mega.deposit()
+}
+
+export async function hasMossGameplaySession(account?: Address | null): Promise<boolean> {
+  const address = getIdleGalacticaAddress()
+  if (!address) return false
+
+  await initialiseMossWallet()
+  const permissions = await mega.getPermissions(account ?? undefined)
+  const grant = permissions?.permissions
+  const expiresSoon = Math.floor(Date.now() / 1000) + 60
+
+  if (!grant || grant.expiry <= expiresSoon) return false
+
+  const calls = grant.permissions.calls
+  const gameAddress = address.toLowerCase()
+
+  return MOSS_GAMEPLAY_CALLS.every((signature) =>
+    calls.some(
+      (call) =>
+        call.to.toLowerCase() === gameAddress &&
+        call.signature.toLowerCase() === signature.toLowerCase(),
+    ),
+  )
+}
+
+export async function grantMossGameplaySession(): Promise<void> {
+  await initialiseMossWallet()
+  const result = await mega.grantPermissions({
+    permissions: createMossGameplayPermission(),
+  })
+
+  if (result.status !== 'approved') {
+    throw new Error('MOSS gameplay session was not approved.')
+  }
+}
+
 export function getContractActivity(activityId: ActivityId): {
   id: number
   kind: ContractStartKind
@@ -186,7 +278,6 @@ export function getContractSectorId(sectorId: SectorId): number {
 }
 
 export async function readChainSnapshot(account: Address): Promise<ChainSnapshot> {
-  const { publicClient } = await getBrowserClients(account)
   const gameAddress = requireIdleGalacticaAddress()
   const hasProfile = await publicClient.readContract({
     address: gameAddress,
@@ -354,6 +445,56 @@ export async function writeCombatSettings(settings: CombatSettings): Promise<Has
   ])
 }
 
+export async function writeMossCreateProfile(): Promise<Hash> {
+  return writeMossGameContract('createProfile', [])
+}
+
+export async function writeMossStartMission(activityId: ActivityId): Promise<Hash> {
+  const activity = getContractActivity(activityId)
+  if (!activity) throw new Error('This mission is not registered on-chain.')
+
+  if (activity.kind === 'gathering') {
+    return writeMossGameContract('startGathering', [activity.id])
+  }
+  if (activity.kind === 'production') {
+    return writeMossGameContract('startProduction', [activity.id])
+  }
+  return writeMossGameContract('startCombat', [activity.id])
+}
+
+export async function writeMossClaimMission(): Promise<Hash> {
+  return writeMossGameContract('claimMission', [])
+}
+
+export async function writeMossStopMission(): Promise<Hash> {
+  return writeMossGameContract('stopMission', [])
+}
+
+export async function writeMossEquipModule(itemId: ItemId): Promise<Hash> {
+  return writeMossGameContract('equipModule', [getContractItemId(itemId)])
+}
+
+export async function writeMossUnequipModule(slot: ModuleSlot): Promise<Hash> {
+  return writeMossGameContract('unequipModule', [MODULE_SLOTS.indexOf(slot)])
+}
+
+export async function writeMossRepairHull(itemId: ItemId): Promise<Hash> {
+  return writeMossGameContract('repairHull', [getContractItemId(itemId)])
+}
+
+export async function writeMossCombatSettings(settings: CombatSettings): Promise<Hash> {
+  return writeMossGameContract('setCombatSettings', [
+    settings.autoRepair,
+    settings.stopAtHull,
+    getContractItemId(settings.repairItemId),
+    settings.maxRepairItemsPerClaim,
+  ])
+}
+
+export async function writeMossTravelToSector(sectorId: SectorId): Promise<Hash> {
+  return writeMossGameContract('travelToSector', [getContractSectorId(sectorId)], { silent: false })
+}
+
 export async function writeBuyTradeRelayOrder(orderId: string): Promise<Hash> {
   await ensureTradeRelayApproval()
   return submitTradeRelayWrite('buy', [BigInt(orderId), 1n])
@@ -362,6 +503,20 @@ export async function writeBuyTradeRelayOrder(orderId: string): Promise<Hash> {
 export async function writeCreateTradeRelayOrder(itemId: ItemId, unitPrice: number): Promise<Hash> {
   await ensureTradeRelayApproval()
   return submitTradeRelayWrite('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)])
+}
+
+export async function writeMossBuyTradeRelayOrder(account: Address, orderId: string): Promise<Hash> {
+  await ensureMossTradeRelayApproval(account)
+  return writeMossTradeRelayContract('buy', [BigInt(orderId), 1n])
+}
+
+export async function writeMossCreateTradeRelayOrder(
+  account: Address,
+  itemId: ItemId,
+  unitPrice: number,
+): Promise<Hash> {
+  await ensureMossTradeRelayApproval(account)
+  return writeMossTradeRelayContract('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)])
 }
 
 async function readCargoBalances(
@@ -539,7 +694,7 @@ function createEmptyChainState(marketOrders: MarketOrder[]): GameState {
 }
 
 async function submitGameWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
-  const { account, publicClient, walletClient } = await getBrowserClients()
+  const { account, walletClient } = await getBrowserClients()
   const hash = await walletClient.writeContract({
     account,
     chain: null,
@@ -552,8 +707,22 @@ async function submitGameWrite(functionName: string, args: readonly unknown[]): 
   return hash
 }
 
+async function writeMossGameContract(
+  functionName: string,
+  args: readonly unknown[],
+  options: { silent?: boolean } = {},
+): Promise<Hash> {
+  return callMossContract({
+    address: requireIdleGalacticaAddress(),
+    abi: IDLE_GALACTICA_ABI,
+    functionName,
+    args: [...args],
+    silent: options.silent ?? true,
+  })
+}
+
 async function submitTradeRelayWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
-  const { account, publicClient, walletClient } = await getBrowserClients()
+  const { account, walletClient } = await getBrowserClients()
   const hash = await walletClient.writeContract({
     account,
     chain: null,
@@ -566,8 +735,21 @@ async function submitTradeRelayWrite(functionName: string, args: readonly unknow
   return hash
 }
 
+async function writeMossTradeRelayContract(
+  functionName: string,
+  args: readonly unknown[],
+): Promise<Hash> {
+  return callMossContract({
+    address: requireTradeRelayAddress(),
+    abi: TRADE_RELAY_ABI,
+    functionName,
+    args: [...args],
+    silent: false,
+  })
+}
+
 async function ensureTradeRelayApproval(): Promise<void> {
-  const { account, publicClient, walletClient } = await getBrowserClients()
+  const { account, walletClient } = await getBrowserClients()
   const gameAddress = requireIdleGalacticaAddress()
   const tradeRelayAddress = requireTradeRelayAddress()
   const approved = await publicClient.readContract({
@@ -590,6 +772,53 @@ async function ensureTradeRelayApproval(): Promise<void> {
   await publicClient.waitForTransactionReceipt({ hash })
 }
 
+async function ensureMossTradeRelayApproval(account: Address): Promise<void> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const tradeRelayAddress = requireTradeRelayAddress()
+  const approved = await publicClient.readContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'isApprovedForAll',
+    args: [account, tradeRelayAddress],
+  })
+
+  if (approved) return
+
+  await callMossContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'setApprovalForAll',
+    args: [tradeRelayAddress, true],
+    silent: false,
+  })
+}
+
+async function callMossContract({
+  address,
+  abi,
+  functionName,
+  args,
+  silent,
+}: {
+  address: Address
+  abi: unknown
+  functionName: string
+  args: unknown[]
+  silent: boolean
+}): Promise<Hash> {
+  await initialiseMossWallet()
+  const result = await mega.callContract({
+    address,
+    abi,
+    functionName,
+    args,
+    silent,
+    silentUIApproveFallback: silent,
+  })
+
+  return requireMossTransaction(result)
+}
+
 async function getBrowserClients(preferredAccount?: Address): Promise<BrowserClients> {
   const provider = getEthereumProvider()
   const transport = custom(provider)
@@ -597,18 +826,17 @@ async function getBrowserClients(preferredAccount?: Address): Promise<BrowserCli
 
   return {
     account,
-    publicClient: createPublicClient({ transport }),
     walletClient: createWalletClient({ transport }),
   }
 }
 
 async function requestWalletAccount(): Promise<Address> {
   const accounts = await getEthereumProvider().request({ method: 'eth_requestAccounts' })
-  const firstAccount = Array.isArray(accounts) ? accounts[0] : null
-  if (typeof firstAccount !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(firstAccount)) {
+  const firstAccount = Array.isArray(accounts) ? toAddress(String(accounts[0] ?? '')) : null
+  if (!firstAccount) {
     throw new Error('No wallet account was returned.')
   }
-  return firstAccount as Address
+  return firstAccount
 }
 
 function getEthereumProvider(): EthereumProvider {
@@ -630,11 +858,41 @@ function requireTradeRelayAddress(): Address {
   return address
 }
 
+function createMossGameplayPermission(): Permission {
+  const address = requireIdleGalacticaAddress()
+
+  return {
+    expiry: Math.floor(Date.now() / 1000) + MOSS_GAMEPLAY_SESSION_SECONDS,
+    permissions: {
+      calls: MOSS_GAMEPLAY_CALLS.map((signature) => ({
+        to: address,
+        signature,
+      })),
+      spend: [],
+    },
+  }
+}
+
+function requireMossTransaction(result: TransactionResult): Hash {
+  if (result.status !== 'approved') {
+    throw new Error(result.error || 'MOSS transaction was not approved.')
+  }
+
+  const hash = result.receipt?.hash ?? result.receipts?.[0]?.hash
+  if (!hash) {
+    throw new Error('MOSS transaction completed without a receipt hash.')
+  }
+
+  return hash
+}
+
 function readAddress(key: string): Address | null {
   const value = import.meta.env[key]
-  return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value)
-    ? (value as Address)
-    : null
+  return toAddress(value)
+}
+
+export function toAddress(value: string | undefined): Address | null {
+  return typeof value === 'string' && isAddress(value) ? value : null
 }
 
 function sectorFromChainId(chainId: number): SectorId {

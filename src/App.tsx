@@ -3,15 +3,19 @@ import {
   Box,
   CircleDollarSign,
   Compass,
+  Copy,
   Crosshair,
   Factory,
   Gauge,
+  Landmark,
   Package,
   Play,
   Rocket,
   Shield,
   ShoppingCart,
+  Sparkles,
   Square,
+  Wallet,
   Wrench,
   Zap,
 } from 'lucide-react'
@@ -19,9 +23,17 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { GameScene } from './GameScene'
 import {
+  addMegaEthTestnet,
   connectWallet,
+  connectMossWallet,
+  getMossWalletStatus,
+  grantMossGameplaySession,
+  hasMossGameplaySession,
+  initialiseMossWallet,
   isChainModeReady,
+  openMossDeposit,
   readChainSnapshot,
+  toAddress,
   writeBuyTradeRelayOrder,
   writeClaimMission,
   writeCombatSettings,
@@ -33,6 +45,17 @@ import {
   writeStopMission,
   writeTravelToSector,
   writeUnequipModule,
+  writeMossBuyTradeRelayOrder,
+  writeMossClaimMission,
+  writeMossCombatSettings,
+  writeMossCreateProfile,
+  writeMossCreateTradeRelayOrder,
+  writeMossEquipModule,
+  writeMossRepairHull,
+  writeMossStartMission,
+  writeMossStopMission,
+  writeMossTravelToSector,
+  writeMossUnequipModule,
   type Address,
 } from './chain'
 import {
@@ -77,6 +100,7 @@ import {
 
 const GROUPS: ActivityGroup[] = ['Gathering', 'Production', 'Combat']
 type MissionSkillFilter = SkillId | 'all'
+type WalletMode = 'injected' | 'moss'
 
 const GROUP_ICONS: Record<ActivityGroup, typeof Activity> = {
   Gathering: Compass,
@@ -111,9 +135,12 @@ function App() {
   })
   const [now, setNow] = useState(() => Date.now())
   const [chainMode, setChainMode] = useState(false)
+  const [walletMode, setWalletMode] = useState<WalletMode>('moss')
   const [chainAccount, setChainAccount] = useState<Address | null>(null)
   const [chainHasProfile, setChainHasProfile] = useState(false)
   const [chainBusy, setChainBusy] = useState(false)
+  const [mossReady, setMossReady] = useState(false)
+  const [mossSessionReady, setMossSessionReady] = useState(false)
   const [notice, setNotice] = useState(() =>
     isChainModeReady()
       ? 'Local v2 simulation active. Chain mode is available.'
@@ -131,6 +158,41 @@ function App() {
       window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
     }
   }, [chainMode, game])
+
+  useEffect(() => {
+    if (walletMode !== 'moss') return
+
+    let cancelled = false
+
+    async function prepareMoss() {
+      try {
+        await initialiseMossWallet()
+        const status = await getMossWalletStatus()
+        if (cancelled) return
+
+        setMossReady(true)
+        if (status.status === 'connected') {
+          const address = toAddress(status.address)
+          setChainAccount(address)
+          setMossSessionReady(address ? await hasMossGameplaySession(address) : false)
+        } else {
+          setMossSessionReady(false)
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setMossReady(false)
+          setMossSessionReady(false)
+          setNotice(error instanceof Error ? error.message : 'MOSS wallet failed to initialize.')
+        }
+      }
+    }
+
+    void prepareMoss()
+
+    return () => {
+      cancelled = true
+    }
+  }, [walletMode])
 
   const activeActivity = game.activeMission ? getActivityById(game.activeMission.activityId) : null
   const preview = useMemo(() => getClaimPreview(game, now), [game, now])
@@ -168,6 +230,7 @@ function App() {
     if (chainMode) {
       setChainMode(false)
       setChainHasProfile(false)
+      setMossSessionReady(false)
       setGame(loadGame())
       setNotice('Local v2 simulation active.')
       return
@@ -181,11 +244,24 @@ function App() {
     await connectAndSync()
   }
 
+  function selectWalletMode(nextMode: WalletMode) {
+    if (nextMode === walletMode) return
+
+    setWalletMode(nextMode)
+    setChainAccount(null)
+    setChainHasProfile(false)
+    setMossSessionReady(false)
+    if (nextMode === 'injected') {
+      setMossReady(false)
+    }
+    setNotice(nextMode === 'moss' ? 'MOSS selected.' : 'MetaMask selected.')
+  }
+
   async function connectAndSync() {
     if (chainBusy) return
     setChainBusy(true)
     try {
-      const account = await connectWallet()
+      const account = await connectSelectedWallet()
       setChainAccount(account)
       setChainMode(true)
       await syncChain(account, 'Chain mode synced.')
@@ -194,6 +270,18 @@ function App() {
     } finally {
       setChainBusy(false)
     }
+  }
+
+  async function connectSelectedWallet(): Promise<Address> {
+    if (walletMode === 'moss') {
+      const account = await connectMossWallet()
+      if (!account) throw new Error('MOSS connection cancelled.')
+      setMossReady(true)
+      setMossSessionReady(await hasMossGameplaySession(account))
+      return account
+    }
+
+    return connectWallet()
   }
 
   async function syncChain(account = chainAccount, success = 'Chain state synced.') {
@@ -212,7 +300,7 @@ function App() {
     )
   }
 
-  async function runChainAction(action: () => Promise<unknown>, success: string) {
+  async function runChainAction(action: (account: Address) => Promise<unknown>, success: string) {
     if (chainBusy) return
     if (!chainReady) {
       setNotice('Chain mode is not configured.')
@@ -223,10 +311,13 @@ function App() {
     setChainBusy(true)
     try {
       if (!account) {
-        account = await connectWallet()
+        account = await connectSelectedWallet()
         setChainAccount(account)
       }
-      await action()
+      await action(account)
+      if (walletMode === 'moss') {
+        setMossSessionReady(await hasMossGameplaySession(account))
+      }
       await syncChain(account, success)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Chain transaction failed.')
@@ -245,7 +336,7 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => writeStartMission(activity.id),
+        () => (walletMode === 'moss' ? writeMossStartMission(activity.id) : writeStartMission(activity.id)),
         game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
       )
       return
@@ -260,7 +351,10 @@ function App() {
   function handleClaimMission() {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeClaimMission(), 'Mission cycles claimed.')
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossClaimMission() : writeClaimMission()),
+        'Mission cycles claimed.',
+      )
       return
     }
 
@@ -270,7 +364,10 @@ function App() {
   function handleStopMission() {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeStopMission(), 'Mission stopped.')
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossStopMission() : writeStopMission()),
+        'Mission stopped.',
+      )
       return
     }
 
@@ -280,7 +377,10 @@ function App() {
   function handleEquipModule(itemId: ItemId) {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeEquipModule(itemId), `${ITEMS[itemId].name} installed.`)
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossEquipModule(itemId) : writeEquipModule(itemId)),
+        `${ITEMS[itemId].name} installed.`,
+      )
       return
     }
 
@@ -290,7 +390,10 @@ function App() {
   function handleUnequipModule(slot: ModuleSlot) {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeUnequipModule(slot), `${formatModuleSlot(slot)} module removed.`)
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossUnequipModule(slot) : writeUnequipModule(slot)),
+        `${formatModuleSlot(slot)} module removed.`,
+      )
       return
     }
 
@@ -300,7 +403,10 @@ function App() {
   function handleRepairHull(itemId: ItemId) {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeRepairHull(itemId), `${ITEMS[itemId].name} used.`)
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossRepairHull(itemId) : writeRepairHull(itemId)),
+        `${ITEMS[itemId].name} used.`,
+      )
       return
     }
 
@@ -310,7 +416,10 @@ function App() {
   function handleTravelToSector(sectorId: SectorId) {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeTravelToSector(sectorId), `Ship routed to ${getSectorById(sectorId).name}.`)
+      void runChainAction(
+        () => (walletMode === 'moss' ? writeMossTravelToSector(sectorId) : writeTravelToSector(sectorId)),
+        `Ship routed to ${getSectorById(sectorId).name}.`,
+      )
       return
     }
 
@@ -320,7 +429,13 @@ function App() {
   function handleBuyRelayItem(orderId: string) {
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeBuyTradeRelayOrder(orderId), 'Trade Relay order filled.')
+      void runChainAction(
+        (account) =>
+          walletMode === 'moss'
+            ? writeMossBuyTradeRelayOrder(account, orderId)
+            : writeBuyTradeRelayOrder(orderId),
+        'Trade Relay order filled.',
+      )
       return
     }
 
@@ -332,7 +447,10 @@ function App() {
       if (!requireChainProfile()) return
       const unitPrice = Math.max(1, Math.floor(ITEMS[itemId].baseValue * 0.6))
       void runChainAction(
-        () => writeCreateTradeRelayOrder(itemId, unitPrice),
+        (account) =>
+          walletMode === 'moss'
+            ? writeMossCreateTradeRelayOrder(account, itemId, unitPrice)
+            : writeCreateTradeRelayOrder(itemId, unitPrice),
         `${ITEMS[itemId].name} listed on the Trade Relay.`,
       )
       return
@@ -351,7 +469,75 @@ function App() {
 
     if (chainMode) {
       if (!requireChainProfile()) return
-      void runChainAction(() => writeCombatSettings(nextGame.combatSettings), 'Combat settings updated.')
+      void runChainAction(
+        () =>
+          walletMode === 'moss'
+            ? writeMossCombatSettings(nextGame.combatSettings)
+            : writeCombatSettings(nextGame.combatSettings),
+        'Combat settings updated.',
+      )
+    }
+  }
+
+  async function enableMossGameplaySession() {
+    if (walletMode !== 'moss') {
+      setNotice('Select MOSS first.')
+      return
+    }
+    if (!chainAccount) {
+      setNotice('Connect MOSS first.')
+      return
+    }
+    if (chainBusy) return
+
+    setChainBusy(true)
+    try {
+      await grantMossGameplaySession()
+      setMossSessionReady(await hasMossGameplaySession(chainAccount))
+      setNotice('MOSS gameplay session ready for 24 hours.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'MOSS gameplay session was not approved.')
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
+  async function fundMossWallet() {
+    if (walletMode !== 'moss') {
+      setNotice('Select MOSS first.')
+      return
+    }
+
+    try {
+      await openMossDeposit()
+      setNotice('MOSS funding screen opened.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to open MOSS funding.')
+    }
+  }
+
+  async function handleNetworkAction() {
+    if (walletMode === 'moss') {
+      setNotice('MOSS uses MegaETH Testnet.')
+      return
+    }
+
+    try {
+      await addMegaEthTestnet()
+      setNotice('MegaETH Testnet added or selected in wallet.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to add MegaETH Testnet.')
+    }
+  }
+
+  async function copyAccountAddress() {
+    if (!chainAccount) return
+
+    try {
+      await navigator.clipboard.writeText(chainAccount)
+      setNotice('Wallet address copied.')
+    } catch {
+      setNotice(chainAccount)
     }
   }
 
@@ -372,18 +558,76 @@ function App() {
           />
         </div>
         <div className="chain-controls">
+          <div className="wallet-mode-switch" aria-label="Wallet mode">
+            <button
+              className={walletMode === 'injected' ? 'selected' : ''}
+              disabled={chainBusy}
+              onClick={() => selectWalletMode('injected')}
+              type="button"
+            >
+              MetaMask
+            </button>
+            <button
+              className={walletMode === 'moss' ? 'selected' : ''}
+              disabled={chainBusy}
+              onClick={() => selectWalletMode('moss')}
+              type="button"
+            >
+              MOSS
+            </button>
+          </div>
           <button disabled={chainBusy || !chainReady} onClick={() => void handleChainToggle()} type="button">
             {chainMode ? 'Local Mode' : 'Chain Mode'}
           </button>
           {chainMode && (
             <button disabled={chainBusy} onClick={() => void connectAndSync()} type="button">
-              {chainAccount ? formatAddress(chainAccount) : 'Connect'}
+              <Wallet size={16} />
+              {chainAccount ? formatAddress(chainAccount) : walletMode === 'moss' ? 'Connect MOSS' : 'Connect'}
+            </button>
+          )}
+          {chainMode && chainAccount && (
+            <button
+              disabled={chainBusy}
+              onClick={() => void copyAccountAddress()}
+              title={chainAccount}
+              type="button"
+            >
+              <Copy size={16} />
+              Copy
+            </button>
+          )}
+          {chainMode && walletMode === 'moss' && (
+            <button disabled={chainBusy || !mossReady} onClick={() => void fundMossWallet()} type="button">
+              <CircleDollarSign size={16} />
+              Fund MOSS
+            </button>
+          )}
+          {chainMode && (
+            <button disabled={chainBusy} onClick={() => void handleNetworkAction()} type="button">
+              <Landmark size={16} />
+              {walletMode === 'moss' ? 'MOSS Testnet' : 'MegaETH'}
+            </button>
+          )}
+          {chainMode && walletMode === 'moss' && (
+            <button
+              className={mossSessionReady ? 'selected' : ''}
+              disabled={chainBusy || !chainAccount || !mossReady}
+              onClick={() => void enableMossGameplaySession()}
+              type="button"
+            >
+              <Sparkles size={16} />
+              {mossSessionReady ? 'Session Ready' : 'Gameplay Session'}
             </button>
           )}
           {chainMode && chainAccount && !chainHasProfile && (
             <button
               disabled={chainBusy}
-              onClick={() => void runChainAction(() => writeCreateProfile(), 'Ship profile created.')}
+              onClick={() =>
+                void runChainAction(
+                  () => (walletMode === 'moss' ? writeMossCreateProfile() : writeCreateProfile()),
+                  'Ship profile created.',
+                )
+              }
               type="button"
             >
               Create Profile

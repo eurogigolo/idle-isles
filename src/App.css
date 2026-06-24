@@ -115,8 +115,29 @@ select {
   min-width: 14rem;
 }
 
-.chain-controls button:first-child {
+.chain-controls > button:first-of-type {
   border-color: rgba(110, 198, 255, 0.45);
+}
+
+.wallet-mode-switch {
+  display: inline-flex;
+  padding: 0.18rem;
+  border: 1px solid rgba(136, 166, 196, 0.24);
+  border-radius: 6px;
+  background: rgba(12, 24, 36, 0.68);
+}
+
+.wallet-mode-switch button {
+  min-height: 1.55rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+.wallet-mode-switch button.selected,
+.chain-controls button.selected {
+  border-color: rgba(75, 222, 178, 0.65);
+  color: #eafff8;
+  background: rgba(35, 121, 99, 0.82);
 }
 
 .stat-pill {
