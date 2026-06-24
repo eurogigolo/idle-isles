@@ -1428,7 +1428,7 @@ export function getActivityStatus(state: GameState, activity: ActivityDefinition
 
   for (const [skillId, level] of Object.entries(activity.levelReqs) as [SkillId, number][]) {
     if (getSkillLevel(state, skillId) < level) {
-      reasons.push(`${getSkillName(skillId)} ${level} required.`)
+      reasons.push(`Level ${level} ${getSkillName(skillId)} required.`)
     }
   }
 
@@ -1683,7 +1683,7 @@ export function getSectorUnlockStatus(
 
   for (const [skillId, level] of Object.entries(sector.levelReqs ?? {}) as [SkillId, number][]) {
     if (getSkillLevel(state, skillId) < level) {
-      reasons.push(`${getSkillName(skillId)} ${level} required.`)
+      reasons.push(`Level ${level} ${getSkillName(skillId)} required.`)
     }
   }
 

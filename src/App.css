@@ -1436,11 +1436,6 @@ select {
   line-height: 1.22;
 }
 
-.mission-card small {
-  color: #ffd8a6;
-  font-size: 0.72rem;
-}
-
 .mission-card button {
   min-height: 1.72rem;
   border-color: color-mix(in srgb, var(--mission-accent) 34%, rgba(136, 166, 196, 0.3));
@@ -1451,6 +1446,76 @@ select {
   background:
     linear-gradient(135deg, var(--mission-accent-soft), rgba(25, 49, 74, 0.88)),
     #19314a;
+}
+
+.mission-requirements {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.38rem;
+  border: 1px solid rgba(255, 216, 166, 0.16);
+  border-radius: 5px;
+  background: rgba(255, 170, 77, 0.045);
+}
+
+.requirement-group {
+  --req-accent: #ffd8a6;
+  display: grid;
+  grid-template-columns: 3.2rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.35rem;
+}
+
+.requirement-group > span {
+  color: var(--req-accent);
+  font-size: 0.62rem;
+  font-weight: 900;
+  line-height: 1.45;
+  text-transform: uppercase;
+}
+
+.requirement-group ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.24rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.requirement-group li {
+  padding: 0.14rem 0.34rem;
+  border: 1px solid color-mix(in srgb, var(--req-accent) 36%, transparent);
+  border-radius: 4px;
+  color: #f2f7ff;
+  background: color-mix(in srgb, var(--req-accent) 10%, rgba(5, 14, 23, 0.72));
+  font-size: 0.68rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.req-route {
+  --req-accent: #6ec6ff;
+}
+
+.req-level {
+  --req-accent: #ffaa4d;
+}
+
+.req-cargo {
+  --req-accent: #ffd8a6;
+}
+
+.req-module {
+  --req-accent: #b363ff;
+}
+
+.req-ship {
+  --req-accent: #ff6f61;
+}
+
+.mission-requirement-fallback {
+  color: #ffd8a6;
+  font-size: 0.72rem;
 }
 
 .cargo-card strong,

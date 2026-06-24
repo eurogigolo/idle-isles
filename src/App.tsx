@@ -38,6 +38,7 @@ import {
   getSectorById,
   getSectorUnlockStatus,
   getSkillLevel,
+  getSkillName,
   getXpForNextLevel,
   sellCargoItem,
   startActivity,
@@ -491,8 +492,15 @@ interface MissionCardProps {
   onStart: () => void
 }
 
+interface RequirementGroup {
+  items: string[]
+  label: string
+  tone: 'route' | 'level' | 'cargo' | 'module' | 'ship'
+}
+
 function MissionCard({ activity, game, onStart }: MissionCardProps) {
   const status = getActivityStatus(game, activity)
+  const requirementGroups = getMissionRequirementGroups(game, activity)
   const Icon = GROUP_ICONS[activity.group]
   const activeMissionId = game.activeMission?.activityId
   const isRunning = activeMissionId === activity.id
@@ -526,12 +534,33 @@ function MissionCard({ activity, game, onStart }: MissionCardProps) {
           <dd>{formatRewards(activity.rewards)}</dd>
         </div>
       </dl>
-      {!status.canStart && <small>{status.reasons.join(' ')}</small>}
+      {!status.canStart && <MissionRequirements fallback={status.reasons} groups={requirementGroups} />}
       <button disabled={!canAttemptStart || isRunning} onClick={onStart} type="button">
         <Play size={16} />
         {isRunning ? 'Running' : canSwitchFromActiveMission ? 'Switch' : 'Start'}
       </button>
     </article>
+  )
+}
+
+function MissionRequirements({ fallback, groups }: { fallback: string[]; groups: RequirementGroup[] }) {
+  if (groups.length === 0) {
+    return <small className="mission-requirement-fallback">{fallback.join(' ')}</small>
+  }
+
+  return (
+    <div aria-label="Mission requirements" className="mission-requirements">
+      {groups.map((group) => (
+        <div className={`requirement-group req-${group.tone}`} key={group.label}>
+          <span>{group.label}</span>
+          <ul>
+            {group.items.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
   )
 }
 
@@ -585,6 +614,69 @@ function formatXp(activity: ActivityDefinition): string {
 
 function activityMatchesSkill(activity: ActivityDefinition, skillId: SkillId): boolean {
   return activity.primarySkill === skillId || (activity.xp[skillId] ?? 0) > 0
+}
+
+function getMissionRequirementGroups(game: GameState, activity: ActivityDefinition): RequirementGroup[] {
+  const groups: RequirementGroup[] = []
+  const sector = getSectorById(activity.sectorId)
+  const routeItems: string[] = []
+
+  if (!game.unlockedSectors[activity.sectorId]) {
+    routeItems.push(`${sector.name} locked`)
+  }
+
+  if (game.currentSectorId !== activity.sectorId) {
+    routeItems.push(`Travel to ${sector.name}`)
+  }
+
+  if (routeItems.length > 0) {
+    groups.push({ items: routeItems, label: 'Route', tone: 'route' })
+  }
+
+  const levelItems = (Object.entries(activity.levelReqs) as [SkillId, number][])
+    .filter(([skillId, level]) => getSkillLevel(game, skillId) < level)
+    .map(([skillId, level]) => `Level ${level} ${getSkillName(skillId)}`)
+
+  if (levelItems.length > 0) {
+    groups.push({ items: levelItems, label: 'Level', tone: 'level' })
+  }
+
+  const moduleItems: string[] = []
+  if (activity.requiredModule && !hasItemEquippedOrInCargo(game, activity.requiredModule)) {
+    moduleItems.push(ITEMS[activity.requiredModule].name)
+  }
+
+  if (activity.combat && !game.ship.modules.hardpoint) {
+    moduleItems.push('Hardpoint module')
+  }
+
+  if (moduleItems.length > 0) {
+    groups.push({ items: moduleItems, label: 'Module', tone: 'module' })
+  }
+
+  const shipItems: string[] = []
+  if (activity.combat && game.ship.currentHull <= 0) {
+    shipItems.push('Repair hull before combat')
+  }
+
+  if (shipItems.length > 0) {
+    groups.push({ items: shipItems, label: 'Ship', tone: 'ship' })
+  }
+
+  const cargoItems = (Object.entries(activity.costs ?? {}) as [ItemId, number][])
+    .filter(([itemId, amount]) => game.cargo[itemId] < amount)
+    .map(([itemId, amount]) => `${formatItemQuantity(itemId, amount)} (have ${game.cargo[itemId]})`)
+
+  if (cargoItems.length > 0) {
+    groups.push({ items: cargoItems, label: 'Cargo', tone: 'cargo' })
+  }
+
+  return groups
+}
+
+function hasItemEquippedOrInCargo(game: GameState, itemId: ItemId): boolean {
+  const item = ITEMS[itemId]
+  return game.cargo[itemId] > 0 || Boolean(item.moduleSlot && game.ship.modules[item.moduleSlot] === itemId)
 }
 
 function formatRewards(rewards: Partial<Record<ItemId, number>>): string {
