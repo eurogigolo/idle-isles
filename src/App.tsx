@@ -107,7 +107,7 @@ function App() {
   const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
   const groupActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
   const visibleActivities = groupActivities.filter(
-    (activity) => selectedSkillFilter === 'all' || activity.primarySkill === selectedSkillFilter,
+    (activity) => selectedSkillFilter === 'all' || activityMatchesSkill(activity, selectedSkillFilter),
   )
   const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
   const progressPct = getMissionProgress(activeActivity, game, now)
@@ -269,7 +269,7 @@ function App() {
               <b>{groupActivities.length}</b>
             </button>
             {groupSkills.map((skill) => {
-              const skillActivityCount = groupActivities.filter((activity) => activity.primarySkill === skill.id).length
+              const skillActivityCount = groupActivities.filter((activity) => activityMatchesSkill(activity, skill.id)).length
               return (
                 <button
                   className={selectedSkillFilter === skill.id ? 'selected' : ''}
@@ -581,6 +581,10 @@ function formatXp(activity: ActivityDefinition): string {
   return Object.entries(activity.xp)
     .map(([skillId, amount]) => `${amount} ${SKILLS.find((skill) => skill.id === skillId)?.name ?? skillId}`)
     .join(', ')
+}
+
+function activityMatchesSkill(activity: ActivityDefinition, skillId: SkillId): boolean {
+  return activity.primarySkill === skillId || (activity.xp[skillId] ?? 0) > 0
 }
 
 function formatRewards(rewards: Partial<Record<ItemId, number>>): string {
