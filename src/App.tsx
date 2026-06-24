@@ -453,14 +453,17 @@ function MissionCard({ activity, game, onStart }: MissionCardProps) {
   const canSwitchFromActiveMission = Boolean(activeMissionId && !isRunning)
   const canAttemptStart = status.canStart || canSwitchFromActiveMission
 
+  const groupClass = activity.group.toLowerCase()
+
   return (
-    <article className={isRunning ? 'mission-card running' : 'mission-card'}>
+    <article className={`mission-card mission-${groupClass} ${isRunning ? 'running' : ''}`}>
       <header>
         <Icon size={16} />
         <div>
           <h3>{activity.name}</h3>
           <span>{getSectorById(activity.sectorId).name} - Tier {activity.tier}</span>
         </div>
+        <b className="mission-type">{activity.group}</b>
       </header>
       <p>{activity.description}</p>
       <dl>
