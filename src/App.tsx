@@ -329,14 +329,29 @@ function App() {
   function handleMissionStart(activity: ActivityDefinition) {
     if (chainMode) {
       if (!requireChainProfile()) return
+      const shouldClaimBeforeSwitch =
+        walletMode === 'moss' &&
+        Boolean(activeActivity) &&
+        game.activeMission?.activityId !== activity.id &&
+        preview.cycles > 0
+      const switchWillClearBacklog =
+        !shouldClaimBeforeSwitch ||
+        preview.cycles <= getClaimCycleCapacity(activeActivity, claimBatchCount)
+
       void runChainAction(
         async () => {
           const chain = await loadChain()
-          return walletMode === 'moss'
-            ? chain.writeMossStartMission(activity.id)
-            : chain.writeStartMission(activity.id)
+          if (walletMode === 'moss') {
+            if (shouldClaimBeforeSwitch) {
+              await chain.writeMossClaimMissionBatch(claimBatchCount)
+              if (!switchWillClearBacklog) return
+            }
+            return chain.writeMossStartMission(activity.id)
+          }
+
+          return chain.writeStartMission(activity.id)
         },
-        game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
+        getMissionStartSuccessMessage(Boolean(game.activeMission), shouldClaimBeforeSwitch, switchWillClearBacklog, claimBatchCount),
       )
       return
     }
@@ -368,12 +383,25 @@ function App() {
   function handleStopMission() {
     if (chainMode) {
       if (!requireChainProfile()) return
+      const shouldClaimBeforeStop = walletMode === 'moss' && Boolean(activeActivity) && preview.cycles > 0
+      const stopWillClearBacklog =
+        !shouldClaimBeforeStop ||
+        preview.cycles <= getClaimCycleCapacity(activeActivity, claimBatchCount)
+
       void runChainAction(
         async () => {
           const chain = await loadChain()
-          return walletMode === 'moss' ? chain.writeMossStopMission() : chain.writeStopMission()
+          if (walletMode === 'moss') {
+            if (shouldClaimBeforeStop) {
+              await chain.writeMossClaimMissionBatch(claimBatchCount)
+              if (!stopWillClearBacklog) return
+            }
+            return chain.writeMossStopMission()
+          }
+
+          return chain.writeStopMission()
         },
-        'Mission stopped.',
+        getMissionStopSuccessMessage(shouldClaimBeforeStop, stopWillClearBacklog, claimBatchCount),
       )
       return
     }
@@ -997,13 +1025,51 @@ function formatAddress(address: Address): string {
 function getMossClaimBatchCount(activity: ActivityDefinition | null, pendingCycles: number): number {
   if (!activity || pendingCycles <= 0) return 1
 
-  const claimCap = CHAIN_CLAIM_CYCLE_CAP[activity.group]
-  return Math.max(1, Math.min(MOSS_MAX_CLAIM_BATCH_CALLS, Math.ceil(pendingCycles / claimCap)))
+  return Math.max(
+    1,
+    Math.min(MOSS_MAX_CLAIM_BATCH_CALLS, Math.ceil(pendingCycles / getClaimCycleCap(activity))),
+  )
+}
+
+function getClaimCycleCapacity(activity: ActivityDefinition | null, claimBatchCount: number): number {
+  return activity ? getClaimCycleCap(activity) * claimBatchCount : 0
+}
+
+function getClaimCycleCap(activity: ActivityDefinition): number {
+  return CHAIN_CLAIM_CYCLE_CAP[activity.group]
 }
 
 function formatClaimButtonSuffix(pendingCycles: number, claimBatchCount: number): string {
   if (pendingCycles <= 0) return ''
   return claimBatchCount > 1 ? `x${claimBatchCount} (${pendingCycles})` : `(${pendingCycles})`
+}
+
+function formatClaimBatchLabel(claimBatchCount: number): string {
+  return claimBatchCount === 1 ? 'batch' : 'batches'
+}
+
+function getMissionStartSuccessMessage(
+  hadActiveMission: boolean,
+  claimedBeforeSwitch: boolean,
+  backlogCleared: boolean,
+  claimBatchCount: number,
+): string {
+  if (claimedBeforeSwitch && !backlogCleared) {
+    return `Submitted ${claimBatchCount} claim ${formatClaimBatchLabel(claimBatchCount)}. More backlog remains before switching.`
+  }
+  if (claimedBeforeSwitch) return 'Pending cycles claimed. Mission switched.'
+  return hadActiveMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.'
+}
+
+function getMissionStopSuccessMessage(
+  claimedBeforeStop: boolean,
+  backlogCleared: boolean,
+  claimBatchCount: number,
+): string {
+  if (claimedBeforeStop && !backlogCleared) {
+    return `Submitted ${claimBatchCount} claim ${formatClaimBatchLabel(claimBatchCount)}. More backlog remains before stopping.`
+  }
+  return claimedBeforeStop ? 'Pending cycles claimed. Mission stopped.' : 'Mission stopped.'
 }
 
 interface PanelTitleProps {
