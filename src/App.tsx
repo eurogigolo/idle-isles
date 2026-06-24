@@ -55,6 +55,7 @@ import {
 } from './game'
 
 const GROUPS: ActivityGroup[] = ['Gathering', 'Production', 'Combat']
+type MissionSkillFilter = SkillId | 'all'
 
 const GROUP_ICONS: Record<ActivityGroup, typeof Activity> = {
   Gathering: Compass,
@@ -82,6 +83,11 @@ const REPAIR_ITEMS = (Object.keys(ITEMS) as ItemId[]).filter(
 function App() {
   const [game, setGame] = useState<GameState>(() => loadGame())
   const [selectedGroup, setSelectedGroup] = useState<ActivityGroup>('Gathering')
+  const [selectedSkillFilters, setSelectedSkillFilters] = useState<Record<ActivityGroup, MissionSkillFilter>>({
+    Gathering: 'all',
+    Production: 'all',
+    Combat: 'all',
+  })
   const [now, setNow] = useState(() => Date.now())
   const [notice, setNotice] = useState('Local v2 simulation active. Chain mode starts after fresh contracts.')
 
@@ -97,9 +103,21 @@ function App() {
   const activeActivity = game.activeMission ? getActivityById(game.activeMission.activityId) : null
   const preview = useMemo(() => getClaimPreview(game, now), [game, now])
   const sector = getSectorById(game.currentSectorId)
-  const visibleActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
+  const selectedSkillFilter = selectedSkillFilters[selectedGroup]
+  const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
+  const groupActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
+  const visibleActivities = groupActivities.filter(
+    (activity) => selectedSkillFilter === 'all' || activity.primarySkill === selectedSkillFilter,
+  )
   const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
   const progressPct = getMissionProgress(activeActivity, game, now)
+
+  function setMissionSkillFilter(filter: MissionSkillFilter) {
+    setSelectedSkillFilters((current) => ({
+      ...current,
+      [selectedGroup]: filter,
+    }))
+  }
 
   function runAction(action: () => GameState, success?: string) {
     try {
@@ -238,6 +256,32 @@ function App() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className={`mission-skill-filter filter-${selectedGroup.toLowerCase()}`}>
+            <span>Skill</span>
+            <button
+              className={selectedSkillFilter === 'all' ? 'selected' : ''}
+              onClick={() => setMissionSkillFilter('all')}
+              type="button"
+            >
+              All
+              <b>{groupActivities.length}</b>
+            </button>
+            {groupSkills.map((skill) => {
+              const skillActivityCount = groupActivities.filter((activity) => activity.primarySkill === skill.id).length
+              return (
+                <button
+                  className={selectedSkillFilter === skill.id ? 'selected' : ''}
+                  key={skill.id}
+                  onClick={() => setMissionSkillFilter(skill.id)}
+                  type="button"
+                >
+                  {skill.name}
+                  <b>{skillActivityCount}</b>
+                </button>
+              )
+            })}
           </div>
 
           <div className="mission-grid">

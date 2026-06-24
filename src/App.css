@@ -359,6 +359,78 @@ select {
   background: #6ec6ff;
 }
 
+.mission-skill-filter {
+  --filter-accent: #6ec6ff;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.32rem;
+  margin: -0.2rem 0.55rem 0.55rem;
+  padding: 0.42rem;
+  border: 1px solid rgba(136, 166, 196, 0.14);
+  border-radius: 6px;
+  background: rgba(5, 14, 23, 0.52);
+}
+
+.mission-skill-filter.filter-gathering {
+  --filter-accent: #50d29c;
+}
+
+.mission-skill-filter.filter-production {
+  --filter-accent: #6ec6ff;
+}
+
+.mission-skill-filter.filter-combat {
+  --filter-accent: #ff9a85;
+}
+
+.mission-skill-filter > span {
+  margin-right: 0.18rem;
+  color: var(--filter-accent);
+  font-size: 0.66rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.mission-skill-filter button {
+  min-height: 1.55rem;
+  gap: 0.32rem;
+  padding: 0.18rem 0.44rem;
+  border-color: color-mix(in srgb, var(--filter-accent) 28%, rgba(136, 166, 196, 0.2));
+  color: #cfe1f2;
+  background: rgba(13, 24, 36, 0.86);
+  font-size: 0.72rem;
+}
+
+.mission-skill-filter button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--filter-accent) 62%, transparent);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--filter-accent) 14%, transparent), rgba(13, 24, 36, 0.9)),
+    #0d1824;
+}
+
+.mission-skill-filter button.selected {
+  border-color: color-mix(in srgb, var(--filter-accent) 76%, transparent);
+  color: #061018;
+  background: var(--filter-accent);
+}
+
+.mission-skill-filter button b {
+  min-width: 1.1rem;
+  padding: 0.08rem 0.24rem;
+  border-radius: 999px;
+  color: #dce7f5;
+  background: rgba(255, 255, 255, 0.12);
+  font-size: 0.64rem;
+  line-height: 1;
+}
+
+.mission-skill-filter button.selected b {
+  color: #061018;
+  background: rgba(6, 16, 24, 0.16);
+}
+
 .space-scene {
   position: relative;
   overflow: hidden;
