@@ -3,10 +3,9 @@ import type { ActivityDefinition } from './game'
 interface GameSceneProps {
   activity: ActivityDefinition | null
   isActive: boolean
-  progress: number
 }
 
-export function GameScene({ activity, isActive, progress }: GameSceneProps) {
+export function GameScene({ activity, isActive }: GameSceneProps) {
   const sceneMode = getSceneMode(activity)
   const sceneClass = activity
     ? `scene-${activity.group.toLowerCase()} scene-${sceneMode}`
@@ -38,9 +37,6 @@ export function GameScene({ activity, isActive, progress }: GameSceneProps) {
       <div className="scene-readout">
         <span>{activity ? activity.group : 'Docked'}</span>
         <strong>{activity ? activity.name : 'Awaiting mission'}</strong>
-      </div>
-      <div className="scene-progress">
-        <span style={{ width: `${progress}%` }} />
       </div>
     </div>
   )

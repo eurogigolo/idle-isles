@@ -253,7 +253,6 @@ select {
 
 .mini-bar,
 .hull-bar,
-.scene-progress,
 .mission-progress-large {
   overflow: hidden;
   height: 0.32rem;
@@ -263,7 +262,6 @@ select {
 
 .mini-bar span,
 .hull-bar span,
-.scene-progress span,
 .mission-progress-large span {
   display: block;
   height: 100%;
@@ -952,7 +950,7 @@ select {
 .scene-readout {
   position: absolute;
   left: 0.7rem;
-  bottom: 0.9rem;
+  bottom: 0.7rem;
   display: grid;
   gap: 0.1rem;
   z-index: 5;
@@ -960,18 +958,6 @@ select {
   border: 1px solid rgba(136, 166, 196, 0.16);
   border-radius: 5px;
   background: rgba(4, 12, 20, 0.58);
-}
-
-.scene-progress {
-  position: absolute;
-  left: 0.7rem;
-  right: 0.7rem;
-  bottom: 0.35rem;
-  z-index: 5;
-}
-
-.scene-progress span {
-  background: #ffaa4d;
 }
 
 @keyframes drift {

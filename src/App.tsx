@@ -161,7 +161,7 @@ function App() {
         </aside>
 
         <section className="panel mission-panel">
-          <GameScene activity={activeActivity} isActive={Boolean(game.activeMission)} progress={progressPct} />
+          <GameScene activity={activeActivity} isActive={Boolean(game.activeMission)} />
 
           <div className={game.activeMission ? 'active-mission active' : 'active-mission'}>
             <div className="active-mission-top">
