@@ -568,15 +568,6 @@ function App() {
           <p className="eyebrow">On-chain space idle RPG</p>
           <h1>Idle Galactica</h1>
         </div>
-        <div className="topbar-stats">
-          <StatPill icon={CircleDollarSign} label="Credits" value={game.cargo.credits.toLocaleString()} />
-          <StatPill icon={Rocket} label="Sector" value={sector.name} />
-          <StatPill
-            icon={Shield}
-            label="Hull"
-            value={`${Math.ceil(game.ship.currentHull)}/${game.ship.maxHull}`}
-          />
-        </div>
         <div className="chain-controls">
           <div className="wallet-mode-switch" aria-label="Wallet mode">
             <button
@@ -816,6 +807,11 @@ function App() {
 
         <aside className="panel ship-panel">
           <PanelTitle icon={Rocket} title="Ship Status" />
+          <div className="ship-summary">
+            <StatPill icon={CircleDollarSign} label="Credits" value={game.cargo.credits.toLocaleString()} />
+            <StatPill icon={Shield} label="Hull" value={`${Math.ceil(game.ship.currentHull)}/${game.ship.maxHull}`} />
+            <StatPill icon={Rocket} label="Sector" value={sector.name} />
+          </div>
           <div className={hullPct <= 35 ? 'hull-card low-hull' : 'hull-card'}>
             <div className="hull-line">
               <span>Hull Integrity</span>

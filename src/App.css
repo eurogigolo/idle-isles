@@ -100,7 +100,6 @@ select {
   font-weight: 700;
 }
 
-.topbar-stats,
 .chain-controls,
 .segmented,
 .mission-actions,
@@ -149,6 +148,28 @@ select {
   border: 1px solid rgba(136, 166, 196, 0.22);
   border-radius: 6px;
   background: rgba(12, 24, 36, 0.82);
+}
+
+.ship-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.55rem 0.55rem 0;
+}
+
+.ship-summary .stat-pill {
+  min-width: 0;
+  padding: 0.38rem 0.45rem;
+  background:
+    linear-gradient(135deg, rgba(110, 198, 255, 0.08), transparent 64%),
+    rgba(12, 24, 36, 0.86);
+}
+
+.ship-summary .stat-pill strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .stat-pill svg {
@@ -1952,7 +1973,6 @@ select {
     padding: 0.65rem;
   }
 
-  .topbar-stats,
   .chain-controls,
   .mission-header {
     align-items: stretch;
@@ -1966,6 +1986,10 @@ select {
 
   .stat-pill {
     min-width: 100%;
+  }
+
+  .ship-summary {
+    grid-template-columns: 1fr;
   }
 
   .mission-card dl {
