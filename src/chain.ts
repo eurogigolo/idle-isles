@@ -103,6 +103,7 @@ export const MEGAETH_TESTNET_PARAMS = {
 let mossInitialisePromise: Promise<void> | null = null
 
 const IDLE_GALACTICA_ABI = parseAbi([
+  'function BOSS_ENCOUNTER_COST() view returns (uint256)',
   'function activeMission(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
   'function balanceOf(address account, uint256 id) view returns (uint256)',
   'function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])',
@@ -376,6 +377,22 @@ export async function readChainSnapshot(account: Address): Promise<ChainSnapshot
     blockNumber,
     game,
     hasProfile,
+  }
+}
+
+export async function readBossEncounterCost(): Promise<number | null> {
+  const gameAddress = getIdleGalacticaAddress()
+  if (!gameAddress) return null
+
+  try {
+    const cost = await publicClient.readContract({
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'BOSS_ENCOUNTER_COST',
+    })
+    return safeNumber(cost)
+  } catch {
+    return null
   }
 }
 

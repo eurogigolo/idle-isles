@@ -139,6 +139,7 @@ function App() {
   const [chainBusy, setChainBusy] = useState(false)
   const [mossReady, setMossReady] = useState(false)
   const [mossSessionReady, setMossSessionReady] = useState(false)
+  const [chainBossEncounterCost, setChainBossEncounterCost] = useState<number | null>(null)
   const [bossBattleId, setBossBattleId] = useState<number | null>(null)
   const [notice, setNotice] = useState(() =>
     isChainModeConfigured()
@@ -213,6 +214,7 @@ function App() {
   )
   const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
   const progressPct = getMissionProgress(activeActivity, game, now)
+  const bossEncounterCost = chainBossEncounterCost ?? GRID_BOSS_COST
 
   function setMissionSkillFilter(filter: MissionSkillFilter) {
     if (isBossTab) return
@@ -236,6 +238,7 @@ function App() {
       setChainMode(false)
       setChainHasProfile(false)
       setMossSessionReady(false)
+      setChainBossEncounterCost(null)
       setGame(loadGame())
       setNotice('Local v2 simulation active.')
       return
@@ -256,6 +259,7 @@ function App() {
     setChainAccount(null)
     setChainHasProfile(false)
     setMossSessionReady(false)
+    setChainBossEncounterCost(null)
     if (nextMode === 'injected') {
       setMossReady(false)
     }
@@ -297,9 +301,13 @@ function App() {
     }
 
     const chain = await loadChain()
-    const snapshot = await chain.readChainSnapshot(account)
+    const [snapshot, bossCost] = await Promise.all([
+      chain.readChainSnapshot(account),
+      chain.readBossEncounterCost(),
+    ])
     setGame(snapshot.game)
     setChainHasProfile(snapshot.hasProfile)
+    setChainBossEncounterCost(bossCost)
     setNotice(
       snapshot.hasProfile
         ? `${success} Block ${snapshot.blockNumber.toString()}.`
@@ -595,8 +603,12 @@ function App() {
       return
     }
     if (!requireChainProfile()) return
-    if (game.cargo.credits < GRID_BOSS_COST) {
-      setNotice(`${GRID_BOSS_COST.toLocaleString()} Credits required for a Grid Boss Encounter.`)
+    if (chainBossEncounterCost === null) {
+      setNotice('The configured game contract does not support Grid Boss Encounters yet.')
+      return
+    }
+    if (game.cargo.credits < bossEncounterCost) {
+      setNotice(`${bossEncounterCost.toLocaleString()} Credits required for a Grid Boss Encounter.`)
       return
     }
 
@@ -610,7 +622,7 @@ function App() {
         setBossBattleId(Date.now())
         return hash
       },
-      `${GRID_BOSS_COST.toLocaleString()} Credits spent. Grid Boss Encounter initialized.`,
+      `${bossEncounterCost.toLocaleString()} Credits spent. Grid Boss Encounter initialized.`,
     )
   }
 
@@ -925,7 +937,8 @@ function App() {
             <BossEncounterPanel
               chainMode={chainMode}
               chainBusy={chainBusy}
-              cost={GRID_BOSS_COST}
+              cost={bossEncounterCost}
+              contractReady={chainBossEncounterCost !== null}
               credits={game.cargo.credits}
               hasProfile={chainHasProfile}
               onFight={handleBossFight}
@@ -1224,6 +1237,7 @@ interface MissionCardProps {
 interface BossEncounterPanelProps {
   chainBusy: boolean
   chainMode: boolean
+  contractReady: boolean
   cost: number
   credits: number
   hasProfile: boolean
@@ -1233,13 +1247,14 @@ interface BossEncounterPanelProps {
 function BossEncounterPanel({
   chainBusy,
   chainMode,
+  contractReady,
   cost,
   credits,
   hasProfile,
   onFight,
 }: BossEncounterPanelProps) {
   const hasEnoughCredits = credits >= cost
-  const disabled = chainBusy || !chainMode || !hasProfile || !hasEnoughCredits
+  const disabled = chainBusy || !chainMode || !contractReady || !hasProfile || !hasEnoughCredits
 
   return (
     <article className="boss-encounter-card">
@@ -1265,8 +1280,9 @@ function BossEncounterPanel({
         Fight
       </button>
       {!chainMode && <small>Chain Mode required for the 10,000 Credit transaction.</small>}
+      {chainMode && !contractReady && <small>Fresh boss encounter contract deployment required.</small>}
       {chainMode && !hasProfile && <small>Create an on-chain ship profile first.</small>}
-      {chainMode && hasProfile && !hasEnoughCredits && (
+      {chainMode && contractReady && hasProfile && !hasEnoughCredits && (
         <small>{cost.toLocaleString()} Credits required. Current balance: {credits.toLocaleString()}.</small>
       )}
     </article>
