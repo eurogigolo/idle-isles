@@ -22,42 +22,7 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { GameScene } from './GameScene'
-import {
-  addMegaEthTestnet,
-  connectWallet,
-  connectMossWallet,
-  getMossWalletStatus,
-  grantMossGameplaySession,
-  hasMossGameplaySession,
-  initialiseMossWallet,
-  isChainModeReady,
-  openMossDeposit,
-  readChainSnapshot,
-  toAddress,
-  writeBuyTradeRelayOrder,
-  writeClaimMission,
-  writeCombatSettings,
-  writeCreateProfile,
-  writeCreateTradeRelayOrder,
-  writeEquipModule,
-  writeRepairHull,
-  writeStartMission,
-  writeStopMission,
-  writeTravelToSector,
-  writeUnequipModule,
-  writeMossBuyTradeRelayOrder,
-  writeMossClaimMission,
-  writeMossCombatSettings,
-  writeMossCreateProfile,
-  writeMossCreateTradeRelayOrder,
-  writeMossEquipModule,
-  writeMossRepairHull,
-  writeMossStartMission,
-  writeMossStopMission,
-  writeMossTravelToSector,
-  writeMossUnequipModule,
-  type Address,
-} from './chain'
+import type { Address } from './chain'
 import {
   ACTIVITIES,
   ITEMS,
@@ -101,6 +66,23 @@ import {
 const GROUPS: ActivityGroup[] = ['Gathering', 'Production', 'Combat']
 type MissionSkillFilter = SkillId | 'all'
 type WalletMode = 'injected' | 'moss'
+type ChainModule = typeof import('./chain')
+
+let chainModulePromise: Promise<ChainModule> | null = null
+
+function loadChain(): Promise<ChainModule> {
+  chainModulePromise ??= import('./chain')
+  return chainModulePromise
+}
+
+function isChainModeConfigured(): boolean {
+  return Boolean(readEnvAddress('VITE_IDLE_GALACTICA_ADDRESS') && readEnvAddress('VITE_TRADE_RELAY_ADDRESS'))
+}
+
+function readEnvAddress(key: string): Address | null {
+  const value = import.meta.env[key]
+  return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value) ? (value as Address) : null
+}
 
 const GROUP_ICONS: Record<ActivityGroup, typeof Activity> = {
   Gathering: Compass,
@@ -142,11 +124,11 @@ function App() {
   const [mossReady, setMossReady] = useState(false)
   const [mossSessionReady, setMossSessionReady] = useState(false)
   const [notice, setNotice] = useState(() =>
-    isChainModeReady()
+    isChainModeConfigured()
       ? 'Local v2 simulation active. Chain mode is available.'
       : 'Local v2 simulation active. Configure v2 contract addresses to enable Chain mode.',
   )
-  const chainReady = isChainModeReady()
+  const chainReady = isChainModeConfigured()
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -166,15 +148,16 @@ function App() {
 
     async function prepareMoss() {
       try {
-        await initialiseMossWallet()
-        const status = await getMossWalletStatus()
+        const chain = await loadChain()
+        await chain.initialiseMossWallet()
+        const status = await chain.getMossWalletStatus()
         if (cancelled) return
 
         setMossReady(true)
         if (status.status === 'connected') {
-          const address = toAddress(status.address)
+          const address = chain.toAddress(status.address)
           setChainAccount(address)
-          setMossSessionReady(address ? await hasMossGameplaySession(address) : false)
+          setMossSessionReady(address ? await chain.hasMossGameplaySession(address) : false)
         } else {
           setMossSessionReady(false)
         }
@@ -273,15 +256,16 @@ function App() {
   }
 
   async function connectSelectedWallet(): Promise<Address> {
+    const chain = await loadChain()
     if (walletMode === 'moss') {
-      const account = await connectMossWallet()
+      const account = await chain.connectMossWallet()
       if (!account) throw new Error('MOSS connection cancelled.')
       setMossReady(true)
-      setMossSessionReady(await hasMossGameplaySession(account))
+      setMossSessionReady(await chain.hasMossGameplaySession(account))
       return account
     }
 
-    return connectWallet()
+    return chain.connectWallet()
   }
 
   async function syncChain(account = chainAccount, success = 'Chain state synced.') {
@@ -290,7 +274,8 @@ function App() {
       return
     }
 
-    const snapshot = await readChainSnapshot(account)
+    const chain = await loadChain()
+    const snapshot = await chain.readChainSnapshot(account)
     setGame(snapshot.game)
     setChainHasProfile(snapshot.hasProfile)
     setNotice(
@@ -316,7 +301,8 @@ function App() {
       }
       await action(account)
       if (walletMode === 'moss') {
-        setMossSessionReady(await hasMossGameplaySession(account))
+        const chain = await loadChain()
+        setMossSessionReady(await chain.hasMossGameplaySession(account))
       }
       await syncChain(account, success)
     } catch (error) {
@@ -336,7 +322,12 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossStartMission(activity.id) : writeStartMission(activity.id)),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossStartMission(activity.id)
+            : chain.writeStartMission(activity.id)
+        },
         game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
       )
       return
@@ -352,7 +343,10 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossClaimMission() : writeClaimMission()),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossClaimMission() : chain.writeClaimMission()
+        },
         'Mission cycles claimed.',
       )
       return
@@ -365,7 +359,10 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossStopMission() : writeStopMission()),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossStopMission() : chain.writeStopMission()
+        },
         'Mission stopped.',
       )
       return
@@ -378,7 +375,10 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossEquipModule(itemId) : writeEquipModule(itemId)),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossEquipModule(itemId) : chain.writeEquipModule(itemId)
+        },
         `${ITEMS[itemId].name} installed.`,
       )
       return
@@ -391,7 +391,10 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossUnequipModule(slot) : writeUnequipModule(slot)),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossUnequipModule(slot) : chain.writeUnequipModule(slot)
+        },
         `${formatModuleSlot(slot)} module removed.`,
       )
       return
@@ -404,7 +407,10 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossRepairHull(itemId) : writeRepairHull(itemId)),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossRepairHull(itemId) : chain.writeRepairHull(itemId)
+        },
         `${ITEMS[itemId].name} used.`,
       )
       return
@@ -417,7 +423,12 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () => (walletMode === 'moss' ? writeMossTravelToSector(sectorId) : writeTravelToSector(sectorId)),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossTravelToSector(sectorId)
+            : chain.writeTravelToSector(sectorId)
+        },
         `Ship routed to ${getSectorById(sectorId).name}.`,
       )
       return
@@ -430,10 +441,12 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        (account) =>
-          walletMode === 'moss'
-            ? writeMossBuyTradeRelayOrder(account, orderId)
-            : writeBuyTradeRelayOrder(orderId),
+        async (account) => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossBuyTradeRelayOrder(account, orderId)
+            : chain.writeBuyTradeRelayOrder(orderId)
+        },
         'Trade Relay order filled.',
       )
       return
@@ -447,10 +460,12 @@ function App() {
       if (!requireChainProfile()) return
       const unitPrice = Math.max(1, Math.floor(ITEMS[itemId].baseValue * 0.6))
       void runChainAction(
-        (account) =>
-          walletMode === 'moss'
-            ? writeMossCreateTradeRelayOrder(account, itemId, unitPrice)
-            : writeCreateTradeRelayOrder(itemId, unitPrice),
+        async (account) => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossCreateTradeRelayOrder(account, itemId, unitPrice)
+            : chain.writeCreateTradeRelayOrder(itemId, unitPrice)
+        },
         `${ITEMS[itemId].name} listed on the Trade Relay.`,
       )
       return
@@ -470,10 +485,12 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        () =>
-          walletMode === 'moss'
-            ? writeMossCombatSettings(nextGame.combatSettings)
-            : writeCombatSettings(nextGame.combatSettings),
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossCombatSettings(nextGame.combatSettings)
+            : chain.writeCombatSettings(nextGame.combatSettings)
+        },
         'Combat settings updated.',
       )
     }
@@ -492,8 +509,9 @@ function App() {
 
     setChainBusy(true)
     try {
-      await grantMossGameplaySession()
-      setMossSessionReady(await hasMossGameplaySession(chainAccount))
+      const chain = await loadChain()
+      await chain.grantMossGameplaySession()
+      setMossSessionReady(await chain.hasMossGameplaySession(chainAccount))
       setNotice('MOSS gameplay session ready for 24 hours.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'MOSS gameplay session was not approved.')
@@ -509,7 +527,8 @@ function App() {
     }
 
     try {
-      await openMossDeposit()
+      const chain = await loadChain()
+      await chain.openMossDeposit()
       setNotice('MOSS funding screen opened.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Unable to open MOSS funding.')
@@ -523,7 +542,8 @@ function App() {
     }
 
     try {
-      await addMegaEthTestnet()
+      const chain = await loadChain()
+      await chain.addMegaEthTestnet()
       setNotice('MegaETH Testnet added or selected in wallet.')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'Unable to add MegaETH Testnet.')
@@ -624,7 +644,10 @@ function App() {
               disabled={chainBusy}
               onClick={() =>
                 void runChainAction(
-                  () => (walletMode === 'moss' ? writeMossCreateProfile() : writeCreateProfile()),
+                  async () => {
+                    const chain = await loadChain()
+                    return walletMode === 'moss' ? chain.writeMossCreateProfile() : chain.writeCreateProfile()
+                  },
                   'Ship profile created.',
                 )
               }

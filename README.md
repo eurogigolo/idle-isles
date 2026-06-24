@@ -1,6 +1,6 @@
-# Idle Isles
+# Idle Galactica
 
-An onchain-first idle RPG prototype: Melvor-style passive progression, transferable ERC-1155 items, and a Hoard Hall market loop.
+An on-chain-first space idle RPG prototype with ship progression, timed missions, ERC-1155 cargo, ship modules, and a Trade Relay market loop.
 
 ## Run
 
@@ -19,35 +19,33 @@ Run the full local gate before merging or deploying:
 npm run verify
 ```
 
-This runs linting, dependency audit, content ID validation, Solidity build, bytecode budget checks,
-contract tests, and the production frontend build in order.
+This runs linting, dependency audit, content ID validation, Solidity build, bytecode budget checks, contract tests, and the production frontend build.
 
-## Contract Mode
+## Chain Mode
 
-Local simulation remains the default play mode. To enable the Chain toggle for a deployed
-contract set, copy `.env.example` to `.env`, then set the deployed core and Hoard Hall addresses:
+Local simulation remains the default. To enable Chain mode for a deployed v2 contract set, copy `.env.example` to `.env`, then set:
 
 ```bash
-VITE_IDLE_ISLES_ADDRESS=0x...
-VITE_HOARD_HALL_ADDRESS=0x...
+VITE_IDLE_GALACTICA_ADDRESS=0x...
+VITE_TRADE_RELAY_ADDRESS=0x...
 ```
 
-Then connect a wallet, switch to MegaETH Testnet, select `Chain`, and create or refresh the
-onchain profile.
+Then connect a wallet, select Chain Mode, and create or sync the on-chain ship profile.
 
-Chain mode supports either an injected wallet such as MetaMask or MOSS. With MOSS, select `MOSS`,
-connect the wallet, then approve `Gameplay Session` once. That session is scoped to the deployed
-`IdleIsles` contract for core gameplay calls such as starting activities, claiming, eating, and
-equipping. Hoard Hall orders and ship travel still require an explicit wallet confirmation because
-they can move escrowed items or spend Crowns.
+Chain mode supports:
 
-## Deploy
+- MOSS wallet with 24-hour gameplay sessions for seamless mission, module, repair, and claim actions.
+- MetaMask or another injected wallet as a fallback.
+- Explicit confirmations for higher-risk actions such as Trade Relay approvals/listing/buying and sector travel.
 
-Set a funded MegaETH Testnet deployer key in `.env`:
+## Deploy Contracts
+
+Set a funded MegaETH Testnet deployer key locally:
 
 ```bash
 MEGAETH_RPC_URL=https://carrot.megaeth.com/rpc
 MEGAETH_PRIVATE_KEY=0x...
+IDLE_GALACTICA_METADATA_URI=ipfs://idle-galactica/{id}.json
 ```
 
 Deploy the content/core/market contract set:
@@ -56,23 +54,20 @@ Deploy the content/core/market contract set:
 npm run deploy:megaeth
 ```
 
-The deploy script writes `deployments/megaeth-testnet.json` and prints the
-`VITE_IDLE_ISLES_ADDRESS` and `VITE_HOARD_HALL_ADDRESS` values for frontend Chain mode.
+The deploy script writes `deployments/megaeth-testnet.json` and prints the `VITE_IDLE_GALACTICA_ADDRESS` and `VITE_TRADE_RELAY_ADDRESS` values for frontend Chain mode.
 
-## Deploy the Web App to Railway
+## Deploy Web App
 
-The repository includes `railway.json` and a production `npm start` command. Railway will build
-the Vite app and serve the generated `dist/` folder on Railway's assigned `PORT`.
+The repository includes `railway.json` and a production `npm start` command. Railway builds the Vite app and serves the generated `dist/` folder on Railway's assigned `PORT`.
 
 Set these Railway service variables before deploying:
 
 ```bash
-VITE_IDLE_ISLES_ADDRESS=0x...
-VITE_HOARD_HALL_ADDRESS=0x...
+VITE_IDLE_GALACTICA_ADDRESS=0x...
+VITE_TRADE_RELAY_ADDRESS=0x...
 ```
 
-Do not add `MEGAETH_PRIVATE_KEY` to the Railway frontend service. The deployer key is only needed
-locally when deploying fresh contracts.
+Do not add `MEGAETH_PRIVATE_KEY` to the Railway frontend service. The deployer key is only needed locally when deploying fresh contracts.
 
 Railway config-as-code uses:
 
@@ -81,23 +76,16 @@ npm ci && npm run build
 npm start
 ```
 
-After deployment, open the Railway service's Networking settings and generate a public domain.
-
 ## Current Slice
 
-- Browser-playable AFK activities with persisted local progress.
-- Idle Isles area layer: all profiles begin in the Starter Area, while later zones are grouped behind an unlockable Outer Isles ship route.
-- Harbor Merchant route panel for local ship travel; the first Outer Isles passage costs 50,000 Crowns.
-- Combat, gathering, smithing, crafting, cooking, inventory, equipment, and claim loops.
-- Hoard Hall order panel using in-game crowns, player listings, and 5% Realm Scavenger buy floors.
-- Wallet connect, MegaETH Testnet network helper, and optional MOSS gameplay session support.
-- Optional contract mode for profile reads, balances, `createProfile`, core activity starts, `claim`,
-  `equip`, `unequip`, `eatFood`, marketplace order reads, listing, buying, cancellation, and ship
-  travel between supported areas.
-- Area unlocks and ship travel are onchain for Starter Area and Outer Isles; higher-tier activity
-  parity is still being ported.
-- MegaETH deploy script for `IdleIslesContent` + `IdleIsles` + `HoardHall`.
-- Starter Solidity contract in `contracts/IdleIsles.sol`, immutable content in `contracts/IdleIslesContent.sol`, and extracted marketplace escrow in `contracts/HoardHall.sol`.
+- Ten launch skills across gathering, production, and combat.
+- Orbital Dock and Inner Belt sectors.
+- Ship-centric progression through hull integrity, modules, cargo, repair supplies, and mission output.
+- Gathering, production, and combat mission loops with local simulation and on-chain settlement.
+- Trade Relay order panel using in-game Credits.
+- MOSS gameplay sessions for low-friction repeated gameplay transactions.
+- MetaMask fallback for standard injected wallet flows.
+- Fresh v2 contracts: `IdleGalactica`, `IdleGalacticaContent`, and `TradeRelay`.
 
 ## MegaETH Testnet
 
@@ -105,30 +93,13 @@ After deployment, open the Railway service's Networking settings and generate a 
 - RPC: `https://carrot.megaeth.com/rpc`
 - Explorer: `https://megaeth-testnet-v2.blockscout.com`
 
-## Contract Direction
-
-`IdleIsles.sol` uses ERC-1155 items for transferable resources, gear, drops, and crowns. Core gameplay includes:
-
-- `createProfile`
-- `startGather`
-- `startArtisan`
-- `startCombat`
-- `claim`
-- `equip`
-
-`HoardHall.sol` owns marketplace order state and uses standard ERC-1155 approvals to escrow listed items and transfer Crowns on fills.
-
-The frontend defaults to local simulation mode so the game loop can be tuned while Chain mode exercises the deployed contract slice.
-
 ## Production Readiness
 
-Idle Isles is not mainnet-production ready yet. The current production hardening plan is tracked in
-[`docs/production-readiness.md`](docs/production-readiness.md).
+Idle Galactica is not mainnet-production ready yet. The current production hardening plan is tracked in [`docs/production-readiness.md`](docs/production-readiness.md).
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](CONTRIBUTING.md). Gameplay rule changes should update
-[`solidity-notes.md`](solidity-notes.md) when they affect contract behavior or future contract parity.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Gameplay rule changes should update contract notes when they affect contract behavior or future chain parity.
 
 ## License
 
