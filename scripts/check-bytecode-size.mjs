@@ -4,18 +4,18 @@ const EVM_DEPLOYED_BYTECODE_LIMIT = 24_576
 
 const contracts = [
   {
-    name: 'IdleIsles',
-    artifactPath: 'artifacts/contracts/IdleIsles.sol/IdleIsles.json',
+    name: 'IdleGalactica',
+    artifactPath: 'artifacts/contracts/IdleGalactica.sol/IdleGalactica.json',
     budget: 24_200,
   },
   {
-    name: 'IdleIslesContent',
-    artifactPath: 'artifacts/contracts/IdleIslesContent.sol/IdleIslesContent.json',
+    name: 'IdleGalacticaContent',
+    artifactPath: 'artifacts/contracts/IdleGalacticaContent.sol/IdleGalacticaContent.json',
     budget: 12_000,
   },
   {
-    name: 'HoardHall',
-    artifactPath: 'artifacts/contracts/HoardHall.sol/HoardHall.json',
+    name: 'TradeRelay',
+    artifactPath: 'artifacts/contracts/TradeRelay.sol/TradeRelay.json',
     budget: 8_000,
   },
 ]

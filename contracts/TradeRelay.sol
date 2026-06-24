@@ -5,21 +5,21 @@ import {IERC1155} from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import {ERC1155Holder} from "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
-interface IIdleIslesProfile {
+interface IIdleGalacticaProfile {
     function hasProfile(address player) external view returns (bool);
 }
 
-contract HoardHall is ERC1155Holder, ReentrancyGuard {
+contract TradeRelay is ERC1155Holder, ReentrancyGuard {
     error BadGame();
     error NoProfile();
     error AmountZero();
     error PriceZero();
-    error CrownsNotListed();
+    error CreditsNotListed();
     error NotEnoughListed();
     error NotSeller();
     error OrderEmpty();
 
-    uint256 internal constant CROWNS = 1;
+    uint256 internal constant CREDITS = 1;
 
     struct Order {
         address seller;
@@ -29,7 +29,7 @@ contract HoardHall is ERC1155Holder, ReentrancyGuard {
     }
 
     IERC1155 internal immutable ITEMS;
-    IIdleIslesProfile internal immutable GAME;
+    IIdleGalacticaProfile internal immutable GAME;
 
     mapping(uint256 => Order) public orders;
     uint256 public nextOrderId = 1;
@@ -47,14 +47,14 @@ contract HoardHall is ERC1155Holder, ReentrancyGuard {
     constructor(address gameAddress) {
         if (gameAddress == address(0)) revert BadGame();
         ITEMS = IERC1155(gameAddress);
-        GAME = IIdleIslesProfile(gameAddress);
+        GAME = IIdleGalacticaProfile(gameAddress);
     }
 
     function createOrder(uint256 itemId, uint64 amount, uint128 priceEach) external nonReentrant {
         if (!GAME.hasProfile(msg.sender)) revert NoProfile();
         if (amount == 0) revert AmountZero();
         if (priceEach == 0) revert PriceZero();
-        if (itemId == CROWNS) revert CrownsNotListed();
+        if (itemId == CREDITS) revert CreditsNotListed();
 
         ITEMS.safeTransferFrom(msg.sender, address(this), itemId, amount, "");
 
@@ -81,7 +81,7 @@ contract HoardHall is ERC1155Holder, ReentrancyGuard {
         ITEMS.safeTransferFrom(
             msg.sender,
             order.seller,
-            CROWNS,
+            CREDITS,
             uint256(order.priceEach) * amount,
             ""
         );

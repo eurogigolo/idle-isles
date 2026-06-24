@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IdleIsles} from "../IdleIsles.sol";
+import {IdleGalactica} from "../IdleGalactica.sol";
 
-contract IdleIslesHarness is IdleIsles {
+contract IdleGalacticaHarness is IdleGalactica {
     constructor(string memory metadataUri, address contentAddress)
-        IdleIsles(metadataUri, contentAddress)
+        IdleGalactica(metadataUri, contentAddress)
     {}
 
     function mintForTest(address player, uint256 itemId, uint256 amount) external {
@@ -14,5 +14,9 @@ contract IdleIslesHarness is IdleIsles {
 
     function setSkillXpForTest(address player, uint8 skill, uint64 xp) external {
         skillXp[player][skill] = xp;
+    }
+
+    function setCurrentHullForTest(address player, uint16 hull) external {
+        currentHull[player] = hull;
     }
 }
