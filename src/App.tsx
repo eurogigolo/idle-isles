@@ -119,9 +119,13 @@ const CHAIN_CLAIM_CYCLE_CAP: Record<ActivityGroup, number> = {
   Combat: 200,
 }
 const MOSS_MAX_CLAIM_BATCH_CALLS = 5
-const GRID_BOSS_COST = 10_000
+const GRID_BOSS_COST = 1
 const MOSS_GAMEPLAY_SESSION_TOOLTIP =
   'Allows MOSS to submit approved game actions for 24 hours without repeated popups: mission actions, repairs, combat settings, sector travel, boss encounters, and Trade Relay listings. First-time Trade Relay escrow approval may still ask for confirmation.'
+
+function formatCreditAmount(amount: number) {
+  return `${amount.toLocaleString()} ${amount === 1 ? 'Credit' : 'Credits'}`
+}
 
 function App() {
   const [game, setGame] = useState<GameState>(() => loadGame())
@@ -608,7 +612,7 @@ function App() {
       return
     }
     if (game.cargo.credits < bossEncounterCost) {
-      setNotice(`${bossEncounterCost.toLocaleString()} Credits required for a Grid Boss Encounter.`)
+      setNotice(`${formatCreditAmount(bossEncounterCost)} required for a Grid Boss Encounter.`)
       return
     }
 
@@ -622,7 +626,7 @@ function App() {
         setBossBattleId(Date.now())
         return hash
       },
-      `${bossEncounterCost.toLocaleString()} Credits spent. Grid Boss Encounter initialized.`,
+      `${formatCreditAmount(bossEncounterCost)} spent. Grid Boss Encounter initialized.`,
     )
   }
 
@@ -1255,6 +1259,7 @@ function BossEncounterPanel({
 }: BossEncounterPanelProps) {
   const hasEnoughCredits = credits >= cost
   const disabled = chainBusy || !chainMode || !contractReady || !hasProfile || !hasEnoughCredits
+  const formattedCost = formatCreditAmount(cost)
 
   return (
     <article className="boss-encounter-card">
@@ -1264,7 +1269,7 @@ function BossEncounterPanel({
           <h3>Rift Warden</h3>
           <span>Grid Boss Encounter</span>
         </div>
-        <b>{cost.toLocaleString()} Credits</b>
+        <b>{formattedCost}</b>
       </header>
       <p>
         Spend Credits on-chain to open a real-time 3 by 6 grid duel. Your ship holds the
@@ -1279,11 +1284,13 @@ function BossEncounterPanel({
         <Crosshair size={16} />
         Fight
       </button>
-      {!chainMode && <small>Chain Mode required for the 10,000 Credit transaction.</small>}
+      {!chainMode && <small>Chain Mode required for the {formattedCost} transaction.</small>}
       {chainMode && !contractReady && <small>Fresh boss encounter contract deployment required.</small>}
       {chainMode && !hasProfile && <small>Create an on-chain ship profile first.</small>}
       {chainMode && contractReady && hasProfile && !hasEnoughCredits && (
-        <small>{cost.toLocaleString()} Credits required. Current balance: {credits.toLocaleString()}.</small>
+        <small>
+          {formattedCost} required. Current balance: {formatCreditAmount(credits)}.
+        </small>
       )}
     </article>
   )

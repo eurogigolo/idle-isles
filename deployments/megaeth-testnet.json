@@ -1,38 +1,38 @@
 {
   "network": "megaethTestnet",
   "chainId": 6343,
-  "deployedAt": "2026-06-24T02:27:03.160Z",
+  "deployedAt": "2026-06-24T23:44:07.672Z",
   "deployer": "0x4cb9b2fde8bb73e82dd343bc256c5dae96786ff7",
   "metadataUri": "ipfs://idle-galactica/{id}.json",
   "contracts": {
     "IdleGalacticaContent": {
-      "address": "0x96Aca6DC83b6bE746beF5e21A0ccD7c1954c2D05",
-      "transactionHash": "0x6d5d0465147ca8353d6b8869de6c9c6a412822c6f1aa171b73a2a54ce21b49bd",
-      "blockNumber": "22557566",
+      "address": "0x92bC478b26986DfF694f90662Bc0B531D2329371",
+      "transactionHash": "0x896ee67588ff0ae52bf461e8658ed83fa6c45830f7a97450f08043c7de7574e7",
+      "blockNumber": "22634190",
       "gasUsed": "105920461"
     },
     "IdleGalactica": {
-      "address": "0x7Ea50dcf389779871713c76FC7dA4a1fd1A1E734",
-      "transactionHash": "0x9213e425a100688ecf06969965dd04b7ada43f701964c1aa86b5f5472c37cde8",
-      "blockNumber": "22557567",
-      "gasUsed": "179304038",
+      "address": "0xd6dB3F0649f9E5c7A24f6Af4Fb2aa7Fb8DE4Ae09",
+      "transactionHash": "0xa8ee0710a73b73d279b0fb7df0fb63484a03c6b5a29f517419d29098851a8cb8",
+      "blockNumber": "22634191",
+      "gasUsed": "182655191",
       "constructorArgs": [
         "ipfs://idle-galactica/{id}.json",
-        "0x96Aca6DC83b6bE746beF5e21A0ccD7c1954c2D05"
+        "0x92bC478b26986DfF694f90662Bc0B531D2329371"
       ]
     },
     "TradeRelay": {
-      "address": "0x71D70a3075431000617A4F0525F72490b57cf0EA",
-      "transactionHash": "0xcf1f8eadf65367dbaf73e0a31534eb641076ea6327d259c33093ab8645102622",
-      "blockNumber": "22557568",
+      "address": "0xfB8974f5BfEe8c998412dF3D1b8C61188803d8d9",
+      "transactionHash": "0xc518f0dacafcbb04fd16fd76b6f9f48504de269ec98d76ae161faac9ae47cfd9",
+      "blockNumber": "22634192",
       "gasUsed": "36471478",
       "constructorArgs": [
-        "0x7Ea50dcf389779871713c76FC7dA4a1fd1A1E734"
+        "0xd6dB3F0649f9E5c7A24f6Af4Fb2aa7Fb8DE4Ae09"
       ]
     }
   },
   "frontendEnv": {
-    "VITE_IDLE_GALACTICA_ADDRESS": "0x7Ea50dcf389779871713c76FC7dA4a1fd1A1E734",
-    "VITE_TRADE_RELAY_ADDRESS": "0x71D70a3075431000617A4F0525F72490b57cf0EA"
+    "VITE_IDLE_GALACTICA_ADDRESS": "0xd6dB3F0649f9E5c7A24f6Af4Fb2aa7Fb8DE4Ae09",
+    "VITE_TRADE_RELAY_ADDRESS": "0xfB8974f5BfEe8c998412dF3D1b8C61188803d8d9"
   }
 }

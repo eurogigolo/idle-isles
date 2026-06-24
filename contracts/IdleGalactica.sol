@@ -74,7 +74,7 @@ contract IdleGalactica is ERC1155 {
     }
 
     uint256 internal constant CREDITS = 1;
-    uint256 public constant BOSS_ENCOUNTER_COST = 10_000;
+    uint256 public constant BOSS_ENCOUNTER_COST = 1;
     uint256 internal constant REPAIR_GEL = 250;
     uint256 internal constant OXYGEN_CELL = 251;
     uint256 internal constant LIGHT_TURRET = 404;
