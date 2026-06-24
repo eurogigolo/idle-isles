@@ -931,7 +931,7 @@ function App() {
                 onChange={(event) => commitCombatSettings({ autoRepair: event.currentTarget.checked })}
                 type="checkbox"
               />
-              Auto-repair
+              Auto-repair during combat
             </label>
             <label>
               Stop Hull
@@ -1454,7 +1454,7 @@ function formatCargoUseTooltip(itemId: ItemId): string {
   }
 
   if (item.kind === 'repair' && item.repairAmount) {
-    uses.push(`Repair supply: restores ${item.repairAmount} hull manually or through auto-repair.`)
+    uses.push(`Repair supply: restores ${item.repairAmount} hull manually or through auto-repair during combat.`)
   }
 
   if (item.kind === 'ammo') {
