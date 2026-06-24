@@ -743,10 +743,10 @@ function formatCargoSourceTooltip(game: GameState, itemId: ItemId): string {
 }
 
 function formatActivitySourceList(activities: ActivityDefinition[], itemId: ItemId): string {
-  const entries = activities.slice(0, 4).map((activity) => {
-    const amount = activity.rewards[itemId] ?? 0
-    return `${activity.name} (${getSectorById(activity.sectorId).name}, ${amount}/cycle)`
-  })
+  const entries = activities
+    .filter((activity) => (activity.rewards[itemId] ?? 0) > 0)
+    .slice(0, 4)
+    .map((activity) => `${activity.name} (${getSectorById(activity.sectorId).name})`)
 
   if (activities.length > 4) {
     entries.push(`+${activities.length - 4} more`)
