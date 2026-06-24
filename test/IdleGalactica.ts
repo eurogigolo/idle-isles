@@ -284,6 +284,27 @@ describe("Idle Galactica contracts", async function () {
     assert.equal(await game.read.balanceOf([player.account.address, REPAIR_GEL]), 3n);
   });
 
+  it("auto-repairs before combat safety stop when hull starts below threshold", async function () {
+    const { game } = await deployIdleGalacticaHarness();
+    const [player] = await viem.getWalletClients();
+
+    await game.write.createProfile();
+    await game.write.equipModule([LIGHT_TURRET]);
+    await game.write.equipModule([BASIC_SHIELD_GENERATOR]);
+    await game.write.equipModule([REINFORCED_HULL_PLATING]);
+    await game.write.setCurrentHullForTest([player.account.address, 1]);
+
+    await game.write.startCombat([TARGET_DRONE]);
+    await networkHelpers.time.increase(7);
+    await game.write.claimMission();
+
+    assert.equal(await game.read.balanceOf([player.account.address, REPAIR_GEL]), 2n);
+    assert.equal(asBigInt(await game.read.currentHull([player.account.address])), 37n);
+
+    const mission = await game.read.activeMission([player.account.address]);
+    assert.equal(asBigInt(field(mission, "activityId", 0)), BigInt(TARGET_DRONE));
+  });
+
   it("unlocks and travels to Inner Belt after credit and skill requirements", async function () {
     const { game } = await deployIdleGalacticaHarness();
     const [player] = await viem.getWalletClients();

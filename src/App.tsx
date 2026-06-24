@@ -326,6 +326,58 @@ function App() {
     return false
   }
 
+  async function repairChainHullForCombatIfNeeded(
+    chain: ChainModule,
+    activity: ActivityDefinition | null,
+  ): Promise<boolean> {
+    const repairPlan = getChainCombatRepairPlan(activity)
+    if (repairPlan <= 0) return false
+
+    for (let repairIndex = 0; repairIndex < repairPlan; repairIndex += 1) {
+      if (walletMode === 'moss') {
+        await chain.writeMossRepairHull(game.combatSettings.repairItemId)
+      } else {
+        await chain.writeRepairHull(game.combatSettings.repairItemId)
+      }
+    }
+
+    return true
+  }
+
+  function getChainCombatRepairPlan(activity: ActivityDefinition | null): number {
+    const repairItem = ITEMS[game.combatSettings.repairItemId]
+    const repairAmount = repairItem.repairAmount ?? 0
+
+    if (
+      activity?.group !== 'Combat' ||
+      !game.combatSettings.autoRepair ||
+      game.combatSettings.maxRepairItemsPerClaim <= 0 ||
+      game.ship.currentHull <= 0 ||
+      game.ship.currentHull > game.combatSettings.stopAtHull ||
+      game.ship.currentHull >= game.ship.maxHull ||
+      game.cargo[game.combatSettings.repairItemId] <= 0 ||
+      repairAmount <= 0
+    ) {
+      return 0
+    }
+
+    let hull = game.ship.currentHull
+    let available = game.cargo[game.combatSettings.repairItemId]
+    let repairs = 0
+    while (
+      hull <= game.combatSettings.stopAtHull &&
+      hull < game.ship.maxHull &&
+      available > 0 &&
+      repairs < game.combatSettings.maxRepairItemsPerClaim
+    ) {
+      repairs += 1
+      available -= 1
+      hull = Math.min(game.ship.maxHull, hull + repairAmount)
+    }
+
+    return repairs
+  }
+
   function handleMissionStart(activity: ActivityDefinition) {
     if (chainMode) {
       if (!requireChainProfile()) return
@@ -341,6 +393,12 @@ function App() {
       void runChainAction(
         async () => {
           const chain = await loadChain()
+          const settlementActivity = activeActivity && preview.cycles > 0 ? activeActivity : null
+          await repairChainHullForCombatIfNeeded(chain, settlementActivity)
+          if (settlementActivity?.group !== 'Combat' && activity.group === 'Combat') {
+            await repairChainHullForCombatIfNeeded(chain, activity)
+          }
+
           if (walletMode === 'moss') {
             if (shouldClaimBeforeSwitch) {
               await chain.writeMossClaimMissionBatch(claimBatchCount)
@@ -368,6 +426,7 @@ function App() {
       void runChainAction(
         async () => {
           const chain = await loadChain()
+          await repairChainHullForCombatIfNeeded(chain, activeActivity)
           return walletMode === 'moss'
             ? chain.writeMossClaimMissionBatch(claimBatchCount)
             : chain.writeClaimMission()
@@ -391,6 +450,10 @@ function App() {
       void runChainAction(
         async () => {
           const chain = await loadChain()
+          if (preview.cycles > 0) {
+            await repairChainHullForCombatIfNeeded(chain, activeActivity)
+          }
+
           if (walletMode === 'moss') {
             if (shouldClaimBeforeStop) {
               await chain.writeMossClaimMissionBatch(claimBatchCount)
