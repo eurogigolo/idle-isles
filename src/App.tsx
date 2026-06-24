@@ -499,11 +499,19 @@ interface CargoCardProps {
 
 function CargoCard({ amount, itemId, onEquip, onRepair, onSell }: CargoCardProps) {
   const item = ITEMS[itemId]
+  const useTooltip = formatCargoUseTooltip(itemId)
 
   return (
     <article className="cargo-card">
       <div>
-        <strong>{item.name}</strong>
+        <strong
+          className="cargo-name"
+          data-tooltip={useTooltip}
+          tabIndex={0}
+          title={useTooltip}
+        >
+          {item.name}
+        </strong>
         <span>{item.kind}</span>
       </div>
       <b>{amount.toLocaleString()}</b>
@@ -554,6 +562,59 @@ function formatModuleStats(stats: ModuleStats = {}): string {
     .map(([key, label]) => `+${stats[key]} ${label}`)
 
   return summary.length > 0 ? summary.join(' / ') : 'No stat bonus'
+}
+
+function formatCargoUseTooltip(itemId: ItemId): string {
+  const item = ITEMS[itemId]
+  const uses: string[] = []
+
+  if (itemId === 'credits') {
+    uses.push('Spend on Trade Relay orders and sector unlocks.')
+  }
+
+  if (item.kind === 'module' && item.moduleSlot) {
+    uses.push(`Install in ${formatModuleSlot(item.moduleSlot)}: ${formatModuleStats(item.stats)}.`)
+  }
+
+  if (item.kind === 'repair' && item.repairAmount) {
+    uses.push(`Repair supply: restores ${item.repairAmount} hull manually or through auto-repair.`)
+  }
+
+  if (item.kind === 'ammo') {
+    uses.push(
+      item.ammoDamage
+        ? `Ammunition payload: adds ${item.ammoDamage} damage when consumed by combat missions.`
+        : 'Ammunition stockpile for combat loadouts.',
+    )
+  }
+
+  const recipeUses = ACTIVITIES.filter((activity) => (activity.costs?.[itemId] ?? 0) > 0)
+  if (recipeUses.length > 0) {
+    uses.push(`Recipe input for ${formatActivityUseList(recipeUses)}.`)
+  }
+
+  const moduleRequirements = ACTIVITIES.filter((activity) => activity.requiredModule === itemId)
+  if (moduleRequirements.length > 0) {
+    uses.push(`Required module for ${formatActivityUseList(moduleRequirements)}.`)
+  }
+
+  const ammoRequirements = ACTIVITIES.filter((activity) => activity.combat?.requiredAmmo === itemId)
+  if (ammoRequirements.length > 0) {
+    uses.push(`Required ammo for ${formatActivityUseList(ammoRequirements)}.`)
+  }
+
+  if (item.tradable && itemId !== 'credits') {
+    uses.push(`Can be sold to the Trade Relay for ${Math.max(1, Math.floor(item.baseValue * 0.6))} Credits.`)
+  }
+
+  return uses.length > 0 ? uses.join(' ') : item.description
+}
+
+function formatActivityUseList(activities: ActivityDefinition[]): string {
+  const names = activities.map((activity) => activity.name)
+  if (names.length <= 4) return names.join(', ')
+
+  return `${names.slice(0, 4).join(', ')} +${names.length - 4} more`
 }
 
 function getEventLogKind(entry: string): string {
