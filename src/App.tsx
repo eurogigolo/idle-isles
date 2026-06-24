@@ -19,6 +19,23 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { GameScene } from './GameScene'
 import {
+  connectWallet,
+  isChainModeReady,
+  readChainSnapshot,
+  writeBuyTradeRelayOrder,
+  writeClaimMission,
+  writeCombatSettings,
+  writeCreateProfile,
+  writeCreateTradeRelayOrder,
+  writeEquipModule,
+  writeRepairHull,
+  writeStartMission,
+  writeStopMission,
+  writeTravelToSector,
+  writeUnequipModule,
+  type Address,
+} from './chain'
+import {
   ACTIVITIES,
   ITEMS,
   MODULE_SLOTS,
@@ -49,9 +66,12 @@ import {
   useRepairSupply as applyRepairSupply,
   type ActivityDefinition,
   type ActivityGroup,
+  type CombatSettings,
   type GameState,
   type ItemId,
   type ModuleStats,
+  type ModuleSlot,
+  type SectorId,
   type SkillId,
 } from './game'
 
@@ -90,7 +110,16 @@ function App() {
     Combat: 'all',
   })
   const [now, setNow] = useState(() => Date.now())
-  const [notice, setNotice] = useState('Local v2 simulation active. Chain mode starts after fresh contracts.')
+  const [chainMode, setChainMode] = useState(false)
+  const [chainAccount, setChainAccount] = useState<Address | null>(null)
+  const [chainHasProfile, setChainHasProfile] = useState(false)
+  const [chainBusy, setChainBusy] = useState(false)
+  const [notice, setNotice] = useState(() =>
+    isChainModeReady()
+      ? 'Local v2 simulation active. Chain mode is available.'
+      : 'Local v2 simulation active. Configure v2 contract addresses to enable Chain mode.',
+  )
+  const chainReady = isChainModeReady()
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -98,8 +127,10 @@ function App() {
   }, [])
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
-  }, [game])
+    if (!chainMode) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
+    }
+  }, [chainMode, game])
 
   const activeActivity = game.activeMission ? getActivityById(game.activeMission.activityId) : null
   const preview = useMemo(() => getClaimPreview(game, now), [game, now])
@@ -133,6 +164,197 @@ function App() {
     }
   }
 
+  async function handleChainToggle() {
+    if (chainMode) {
+      setChainMode(false)
+      setChainHasProfile(false)
+      setGame(loadGame())
+      setNotice('Local v2 simulation active.')
+      return
+    }
+
+    if (!chainReady) {
+      setNotice('Set VITE_IDLE_GALACTICA_ADDRESS and VITE_TRADE_RELAY_ADDRESS before using Chain mode.')
+      return
+    }
+
+    await connectAndSync()
+  }
+
+  async function connectAndSync() {
+    if (chainBusy) return
+    setChainBusy(true)
+    try {
+      const account = await connectWallet()
+      setChainAccount(account)
+      setChainMode(true)
+      await syncChain(account, 'Chain mode synced.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Wallet connection failed.')
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
+  async function syncChain(account = chainAccount, success = 'Chain state synced.') {
+    if (!account) {
+      await connectAndSync()
+      return
+    }
+
+    const snapshot = await readChainSnapshot(account)
+    setGame(snapshot.game)
+    setChainHasProfile(snapshot.hasProfile)
+    setNotice(
+      snapshot.hasProfile
+        ? `${success} Block ${snapshot.blockNumber.toString()}.`
+        : 'No on-chain profile found. Create a ship profile to begin.',
+    )
+  }
+
+  async function runChainAction(action: () => Promise<unknown>, success: string) {
+    if (chainBusy) return
+    if (!chainReady) {
+      setNotice('Chain mode is not configured.')
+      return
+    }
+
+    let account = chainAccount
+    setChainBusy(true)
+    try {
+      if (!account) {
+        account = await connectWallet()
+        setChainAccount(account)
+      }
+      await action()
+      await syncChain(account, success)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Chain transaction failed.')
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
+  function requireChainProfile(): boolean {
+    if (!chainMode || chainHasProfile) return true
+    setNotice('Create an on-chain ship profile first.')
+    return false
+  }
+
+  function handleMissionStart(activity: ActivityDefinition) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        () => writeStartMission(activity.id),
+        game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
+      )
+      return
+    }
+
+    runAction(
+      () => startActivity(game, activity.id),
+      game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
+    )
+  }
+
+  function handleClaimMission() {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeClaimMission(), 'Mission cycles claimed.')
+      return
+    }
+
+    runAction(() => applyClaim(game), 'Mission cycles claimed.')
+  }
+
+  function handleStopMission() {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeStopMission(), 'Mission stopped.')
+      return
+    }
+
+    runAction(() => stopActivity(game))
+  }
+
+  function handleEquipModule(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeEquipModule(itemId), `${ITEMS[itemId].name} installed.`)
+      return
+    }
+
+    runAction(() => equipModule(game, itemId))
+  }
+
+  function handleUnequipModule(slot: ModuleSlot) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeUnequipModule(slot), `${formatModuleSlot(slot)} module removed.`)
+      return
+    }
+
+    runAction(() => unequipModule(game, slot))
+  }
+
+  function handleRepairHull(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeRepairHull(itemId), `${ITEMS[itemId].name} used.`)
+      return
+    }
+
+    runAction(() => applyRepairSupply(game, itemId))
+  }
+
+  function handleTravelToSector(sectorId: SectorId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeTravelToSector(sectorId), `Ship routed to ${getSectorById(sectorId).name}.`)
+      return
+    }
+
+    runAction(() => travelToSector(game, sectorId))
+  }
+
+  function handleBuyRelayItem(orderId: string) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeBuyTradeRelayOrder(orderId), 'Trade Relay order filled.')
+      return
+    }
+
+    runAction(() => buyRelayItem(game, orderId))
+  }
+
+  function handleSellCargoItem(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      const unitPrice = Math.max(1, Math.floor(ITEMS[itemId].baseValue * 0.6))
+      void runChainAction(
+        () => writeCreateTradeRelayOrder(itemId, unitPrice),
+        `${ITEMS[itemId].name} listed on the Trade Relay.`,
+      )
+      return
+    }
+
+    runAction(() => sellCargoItem(game, itemId))
+  }
+
+  function editCombatSettings(patch: Partial<CombatSettings>) {
+    setGame(updateCombatSettings(game, patch))
+  }
+
+  function commitCombatSettings(patch: Partial<CombatSettings>) {
+    const nextGame = updateCombatSettings(game, patch)
+    setGame(nextGame)
+
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(() => writeCombatSettings(nextGame.combatSettings), 'Combat settings updated.')
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -148,6 +370,30 @@ function App() {
             label="Hull"
             value={`${Math.ceil(game.ship.currentHull)}/${game.ship.maxHull}`}
           />
+        </div>
+        <div className="chain-controls">
+          <button disabled={chainBusy || !chainReady} onClick={() => void handleChainToggle()} type="button">
+            {chainMode ? 'Local Mode' : 'Chain Mode'}
+          </button>
+          {chainMode && (
+            <button disabled={chainBusy} onClick={() => void connectAndSync()} type="button">
+              {chainAccount ? formatAddress(chainAccount) : 'Connect'}
+            </button>
+          )}
+          {chainMode && chainAccount && !chainHasProfile && (
+            <button
+              disabled={chainBusy}
+              onClick={() => void runChainAction(() => writeCreateProfile(), 'Ship profile created.')}
+              type="button"
+            >
+              Create Profile
+            </button>
+          )}
+          {chainMode && chainAccount && (
+            <button disabled={chainBusy} onClick={() => void syncChain()} type="button">
+              Sync
+            </button>
+          )}
         </div>
       </header>
 
@@ -201,16 +447,16 @@ function App() {
               </div>
               <div className="mission-actions">
                 <button
-                  disabled={!game.activeMission || preview.cycles === 0}
-                  onClick={() => runAction(() => applyClaim(game), 'Mission cycles claimed.')}
+                  disabled={!game.activeMission || preview.cycles === 0 || chainBusy}
+                  onClick={handleClaimMission}
                   type="button"
                 >
                   Claim {preview.cycles > 0 ? `(${preview.cycles})` : ''}
                 </button>
                 <button
                   aria-label="Stop mission"
-                  disabled={!game.activeMission}
-                  onClick={() => runAction(() => stopActivity(game))}
+                  disabled={!game.activeMission || chainBusy}
+                  onClick={handleStopMission}
                   title="Stop mission"
                   type="button"
                 >
@@ -295,12 +541,7 @@ function App() {
                 activity={activity}
                 game={game}
                 key={activity.id}
-                onStart={() =>
-                  runAction(
-                    () => startActivity(game, activity.id),
-                    game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
-                  )
-                }
+                onStart={() => handleMissionStart(activity)}
               />
             ))}
           </div>
@@ -322,9 +563,8 @@ function App() {
             <label>
               <input
                 checked={game.combatSettings.autoRepair}
-                onChange={(event) =>
-                  setGame(updateCombatSettings(game, { autoRepair: event.currentTarget.checked }))
-                }
+                disabled={chainBusy}
+                onChange={(event) => commitCombatSettings({ autoRepair: event.currentTarget.checked })}
                 type="checkbox"
               />
               Auto-repair
@@ -334,9 +574,11 @@ function App() {
               <input
                 max={Math.max(1, game.ship.maxHull - 1)}
                 min={1}
+                disabled={chainBusy}
                 onChange={(event) =>
-                  setGame(updateCombatSettings(game, { stopAtHull: Number(event.currentTarget.value) }))
+                  editCombatSettings({ stopAtHull: Number(event.currentTarget.value) })
                 }
+                onBlur={(event) => commitCombatSettings({ stopAtHull: Number(event.currentTarget.value) })}
                 type="number"
                 value={game.combatSettings.stopAtHull}
               />
@@ -344,9 +586,8 @@ function App() {
             <label>
               Repair Supply
               <select
-                onChange={(event) =>
-                  setGame(updateCombatSettings(game, { repairItemId: event.currentTarget.value as ItemId }))
-                }
+                disabled={chainBusy}
+                onChange={(event) => commitCombatSettings({ repairItemId: event.currentTarget.value as ItemId })}
                 value={game.combatSettings.repairItemId}
               >
                 {REPAIR_ITEMS.map((itemId) => (
@@ -368,8 +609,8 @@ function App() {
                   <strong>{itemId ? ITEMS[itemId].name : 'Empty'}</strong>
                   <em>{itemId ? formatModuleStats(ITEMS[itemId].stats) : 'Offline'}</em>
                   <button
-                    disabled={!itemId}
-                    onClick={() => runAction(() => unequipModule(game, slot))}
+                    disabled={!itemId || chainBusy}
+                    onClick={() => handleUnequipModule(slot)}
                     type="button"
                   >
                     Remove
@@ -387,9 +628,9 @@ function App() {
               return (
                 <button
                   className={isCurrent ? 'sector selected' : 'sector'}
-                  disabled={isCurrent || (!game.unlockedSectors[entry.id] && !unlock.canStart)}
+                  disabled={chainBusy || isCurrent || (!game.unlockedSectors[entry.id] && !unlock.canStart)}
                   key={entry.id}
-                  onClick={() => runAction(() => travelToSector(game, entry.id))}
+                  onClick={() => handleTravelToSector(entry.id)}
                   type="button"
                 >
                   <strong>{entry.name}</strong>
@@ -416,9 +657,9 @@ function App() {
                 amount={amount}
                 itemId={itemId}
                 key={itemId}
-                onEquip={() => runAction(() => equipModule(game, itemId))}
-                onRepair={() => runAction(() => applyRepairSupply(game, itemId))}
-                onSell={() => runAction(() => sellCargoItem(game, itemId))}
+                onEquip={() => handleEquipModule(itemId)}
+                onRepair={() => handleRepairHull(itemId)}
+                onSell={() => handleSellCargoItem(itemId)}
               />
             ))}
           </div>
@@ -435,8 +676,8 @@ function App() {
                 <div className="trade-action">
                   <span>{order.quantity} available</span>
                   <button
-                    disabled={order.quantity <= 0 || game.cargo.credits < order.unitPrice}
-                    onClick={() => runAction(() => buyRelayItem(game, order.id))}
+                    disabled={chainBusy || order.quantity <= 0 || game.cargo.credits < order.unitPrice}
+                    onClick={() => handleBuyRelayItem(order.id)}
                     type="button"
                   >
                     Buy <span aria-hidden="true" className="button-divider" /> {order.unitPrice}
@@ -474,6 +715,10 @@ function StatPill({ icon: Icon, label, value }: StatPillProps) {
       <strong>{value}</strong>
     </div>
   )
+}
+
+function formatAddress(address: Address): string {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
 interface PanelTitleProps {

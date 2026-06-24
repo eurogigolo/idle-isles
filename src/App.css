@@ -101,12 +101,22 @@ select {
 }
 
 .topbar-stats,
+.chain-controls,
 .segmented,
 .mission-actions,
 .cargo-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.35rem;
+}
+
+.chain-controls {
+  justify-content: flex-end;
+  min-width: 14rem;
+}
+
+.chain-controls button:first-child {
+  border-color: rgba(110, 198, 255, 0.45);
 }
 
 .stat-pill {
@@ -1922,6 +1932,7 @@ select {
   }
 
   .topbar-stats,
+  .chain-controls,
   .mission-header {
     align-items: stretch;
     flex-direction: column;

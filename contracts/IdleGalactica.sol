@@ -185,6 +185,18 @@ contract IdleGalactica is ERC1155 {
         _settle(msg.sender);
     }
 
+    function stopMission() external {
+        address player = msg.sender;
+        _requireProfile(player);
+        _settle(player);
+
+        ActiveMission memory mission = activeMission[player];
+        if (mission.activityId != 0) {
+            emit MissionStopped(player, mission.activityId, "MANUAL");
+            delete activeMission[player];
+        }
+    }
+
     function equipModule(uint256 itemId) external {
         address player = msg.sender;
         _requireProfile(player);

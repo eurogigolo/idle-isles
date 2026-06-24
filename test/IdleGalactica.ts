@@ -189,6 +189,22 @@ describe("Idle Galactica contracts", async function () {
     assert.equal(asBigInt(field(mission, "activityId", 0)), BigInt(SCRAPPER));
   });
 
+  it("settles pending cycles before manually stopping a mission", async function () {
+    const { game } = await deployIdleGalactica();
+    const [player] = await viem.getWalletClients();
+
+    await game.write.createProfile();
+    await game.write.startGathering([ROCK_HOPPER]);
+    await networkHelpers.time.increase(6);
+    await game.write.stopMission();
+
+    assert.equal(await game.read.balanceOf([player.account.address, FERRITE_ORE]), 2n);
+    assert.equal(await game.read.balanceOf([player.account.address, WATER_ICE]), 1n);
+
+    const mission = await game.read.activeMission([player.account.address]);
+    assert.equal(asBigInt(field(mission, "activityId", 0)), 0n);
+  });
+
   it("settles production, burns inputs, and stops when cargo is depleted", async function () {
     const { game } = await deployIdleGalacticaHarness();
     const [player] = await viem.getWalletClients();
