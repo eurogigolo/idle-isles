@@ -142,12 +142,19 @@ function App() {
               const progress = Math.min(100, (xp / next) * 100)
 
               return (
-                <div className="skill-row" key={skill.id}>
+                <div
+                  aria-label={`${skill.name}: ${skill.description}`}
+                  className="skill-row"
+                  data-tooltip={skill.description}
+                  key={skill.id}
+                  tabIndex={0}
+                  title={skill.description}
+                >
                   <Icon size={15} />
-                  <div>
+                  <div className="skill-name">
                     <strong>{skill.name}</strong>
-                    <span>{skill.category}</span>
                   </div>
+                  <span className={`skill-category ${skill.category.toLowerCase()}`}>{skill.category}</span>
                   <div className="skill-level">
                     <b>{level}</b>
                     <div className="mini-bar">

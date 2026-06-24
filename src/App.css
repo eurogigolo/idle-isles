@@ -218,8 +218,9 @@ select {
 }
 
 .skill-row {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 3.4rem;
+  grid-template-columns: auto minmax(0, 1fr) minmax(4.9rem, auto) 3.4rem;
   align-items: center;
   gap: 0.42rem;
   min-height: 2.55rem;
@@ -227,10 +228,54 @@ select {
   border: 1px solid rgba(136, 166, 196, 0.14);
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.03);
+  outline: none;
+  transition:
+    border-color 140ms ease,
+    background 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .skill-row svg {
   color: #ffaa4d;
+}
+
+.skill-row:hover,
+.skill-row:focus-visible {
+  border-color: rgba(110, 198, 255, 0.44);
+  background: rgba(110, 198, 255, 0.045);
+  box-shadow: 0 0 18px rgba(110, 198, 255, 0.08);
+}
+
+.skill-row::after {
+  position: absolute;
+  z-index: 20;
+  left: calc(100% + 0.55rem);
+  top: 50%;
+  width: min(20rem, 42vw);
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(110, 198, 255, 0.38);
+  border-radius: 6px;
+  color: #dce7f5;
+  background:
+    linear-gradient(135deg, rgba(110, 198, 255, 0.1), transparent 60%),
+    rgba(4, 12, 20, 0.96);
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.35);
+  content: attr(data-tooltip);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(-0.25rem);
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
+}
+
+.skill-row:hover::after,
+.skill-row:focus-visible::after {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
 }
 
 .skill-row strong,
@@ -245,6 +290,31 @@ select {
 
 .skill-row strong {
   font-size: 0.88rem;
+}
+
+.skill-name {
+  min-width: 0;
+}
+
+.skill-category {
+  justify-self: end;
+  color: #6ec6ff;
+  font-size: 0.78rem;
+  font-weight: 900;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.skill-category.gathering {
+  color: #50d29c;
+}
+
+.skill-category.production {
+  color: #6ec6ff;
+}
+
+.skill-category.combat {
+  color: #ff9a85;
 }
 
 .skill-level {
@@ -1492,6 +1562,20 @@ select {
 
   .mission-readouts .wide {
     grid-column: span 2;
+  }
+
+  .skill-row::after {
+    left: 0;
+    right: auto;
+    top: auto;
+    bottom: calc(100% + 0.35rem);
+    width: min(24rem, calc(100vw - 2rem));
+    transform: translateY(0.25rem);
+  }
+
+  .skill-row:hover::after,
+  .skill-row:focus-visible::after {
+    transform: translateY(0);
   }
 }
 
