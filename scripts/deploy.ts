@@ -18,18 +18,22 @@ interface DeploymentRecord {
   deployer: Address;
   metadataUri: string;
   contracts: {
-    IdleIslesContent: ContractDeployment;
-    IdleIsles: ContractDeployment & {
+    IdleGalacticaContent: ContractDeployment;
+    IdleGalactica: ContractDeployment & {
       constructorArgs: [string, Address];
+    };
+    TradeRelay: ContractDeployment & {
+      constructorArgs: [Address];
     };
   };
   frontendEnv: {
-    VITE_IDLE_ISLES_ADDRESS: Address;
+    VITE_IDLE_GALACTICA_ADDRESS: Address;
+    VITE_TRADE_RELAY_ADDRESS: Address;
   };
 }
 
-const DEFAULT_METADATA_URI = "ipfs://idle-isles/{id}.json";
-const metadataUri = process.env.IDLE_ISLES_METADATA_URI ?? DEFAULT_METADATA_URI;
+const DEFAULT_METADATA_URI = "ipfs://idle-galactica/{id}.json";
+const metadataUri = process.env.IDLE_GALACTICA_METADATA_URI ?? DEFAULT_METADATA_URI;
 const confirmations = parseConfirmations(process.env.DEPLOY_CONFIRMATIONS);
 
 async function main() {
@@ -47,13 +51,13 @@ async function main() {
     const chainId = await publicClient.getChainId();
     const deployerAddress = deployer.account.address;
 
-    console.log(`Deploying Idle Isles to ${connection.networkName} (${chainId})`);
+    console.log(`Deploying Idle Galactica to ${connection.networkName} (${chainId})`);
     console.log(`Deployer: ${deployerAddress}`);
     console.log(`Metadata URI: ${metadataUri}`);
     console.log(`Confirmations: ${confirmations}`);
 
-    console.log("Deploying IdleIslesContent...");
-    const contentTx = await viem.sendDeploymentTransaction("IdleIslesContent");
+    console.log("Deploying IdleGalacticaContent...");
+    const contentTx = await viem.sendDeploymentTransaction("IdleGalacticaContent");
     const contentReceipt = await publicClient.waitForTransactionReceipt({
       hash: contentTx.deploymentTransaction.hash,
       confirmations,
@@ -61,12 +65,12 @@ async function main() {
     const contentAddress = requireContractAddress(
       contentTx.contract.address,
       contentReceipt,
-      "IdleIslesContent",
+      "IdleGalacticaContent",
     );
-    console.log(`IdleIslesContent: ${contentAddress}`);
+    console.log(`IdleGalacticaContent: ${contentAddress}`);
 
-    console.log("Deploying IdleIsles...");
-    const gameTx = await viem.sendDeploymentTransaction("IdleIsles", [
+    console.log("Deploying IdleGalactica...");
+    const gameTx = await viem.sendDeploymentTransaction("IdleGalactica", [
       metadataUri,
       contentAddress,
     ]);
@@ -74,8 +78,21 @@ async function main() {
       hash: gameTx.deploymentTransaction.hash,
       confirmations,
     });
-    const gameAddress = requireContractAddress(gameTx.contract.address, gameReceipt, "IdleIsles");
-    console.log(`IdleIsles: ${gameAddress}`);
+    const gameAddress = requireContractAddress(gameTx.contract.address, gameReceipt, "IdleGalactica");
+    console.log(`IdleGalactica: ${gameAddress}`);
+
+    console.log("Deploying TradeRelay...");
+    const tradeRelayTx = await viem.sendDeploymentTransaction("TradeRelay", [gameAddress]);
+    const tradeRelayReceipt = await publicClient.waitForTransactionReceipt({
+      hash: tradeRelayTx.deploymentTransaction.hash,
+      confirmations,
+    });
+    const tradeRelayAddress = requireContractAddress(
+      tradeRelayTx.contract.address,
+      tradeRelayReceipt,
+      "TradeRelay",
+    );
+    console.log(`TradeRelay: ${tradeRelayAddress}`);
 
     const deployment: DeploymentRecord = {
       network: connection.networkName,
@@ -84,18 +101,27 @@ async function main() {
       deployer: deployerAddress,
       metadataUri,
       contracts: {
-        IdleIslesContent: formatDeployment(
+        IdleGalacticaContent: formatDeployment(
           contentAddress,
           contentTx.deploymentTransaction.hash,
           contentReceipt,
         ),
-        IdleIsles: {
+        IdleGalactica: {
           ...formatDeployment(gameAddress, gameTx.deploymentTransaction.hash, gameReceipt),
           constructorArgs: [metadataUri, contentAddress],
         },
+        TradeRelay: {
+          ...formatDeployment(
+            tradeRelayAddress,
+            tradeRelayTx.deploymentTransaction.hash,
+            tradeRelayReceipt,
+          ),
+          constructorArgs: [gameAddress],
+        },
       },
       frontendEnv: {
-        VITE_IDLE_ISLES_ADDRESS: gameAddress,
+        VITE_IDLE_GALACTICA_ADDRESS: gameAddress,
+        VITE_TRADE_RELAY_ADDRESS: tradeRelayAddress,
       },
     };
 
@@ -106,7 +132,8 @@ async function main() {
     await rename(tempOutputPath, outputPath);
 
     console.log(`Deployment written to ${outputPath}`);
-    console.log(`Set VITE_IDLE_ISLES_ADDRESS=${gameAddress}`);
+    console.log(`Set VITE_IDLE_GALACTICA_ADDRESS=${gameAddress}`);
+    console.log(`Set VITE_TRADE_RELAY_ADDRESS=${tradeRelayAddress}`);
   } finally {
     await connection.close();
   }

@@ -5,62 +5,84 @@ import {
   http,
   isAddress,
   parseAbi,
-  type Address,
-  type EIP1193Provider,
-  type Hex,
+  type Hash,
+  type PublicClient,
+  type WalletClient,
 } from 'viem'
+import { mega, type ConnectionStatus, type Permission, type TransactionResult } from '@megaeth-labs/wallet-sdk'
 import { megaethTestnet } from 'viem/chains'
 import {
   CONTRACT_ACTIVITY_IDS,
-  CONTRACT_AREA_IDS,
   CONTRACT_ITEM_IDS,
+  CONTRACT_SECTOR_IDS,
+  type ContractActivityIds,
+  type ContractStartKind,
 } from './generated/contentIds'
 import {
-  AREAS,
-  EQUIPMENT_SLOTS,
   ITEMS,
+  MODULE_SLOTS,
+  SECTORS,
   SKILLS,
-  STARTER_AREA_ID,
+  createInitialState,
   type ActivityId,
-  type AreaId,
-  type Equipment,
-  type Inventory,
+  type CombatSettings,
+  type GameState,
   type ItemId,
   type MarketOrder,
-  type SkillBook,
+  type ModuleSlot,
+  type SectorId,
 } from './game'
 
-export type BrowserEthereumProvider = EIP1193Provider & {
-  on?: (event: string, handler: (...args: unknown[]) => void) => void
-  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void
+export type Address = `0x${string}`
+
+interface EthereumProvider {
+  request(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<unknown>
+}
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider
+  }
 }
 
 export interface ChainSnapshot {
+  account: Address
+  blockNumber: bigint
+  game: GameState
   hasProfile: boolean
-  skills: SkillBook
-  inventory: Inventory
-  equipment: Equipment
-  marketOrders: MarketOrder[]
-  currentHitpoints: number
-  maxHitpoints: number
-  currentAreaId: AreaId
-  unlockedAreaIds: AreaId[]
-  active: {
-    id: ActivityId
-    startedAt: number
-    lastClaimAt: number
-  } | null
-  pendingCycles: number
 }
 
+export interface ChainContentIds {
+  activities: ContractActivityIds
+  items: Record<ItemId, bigint>
+  sectors: Record<SectorId, number>
+}
+
+export interface ChainWriteRequest {
+  functionName:
+    | 'createProfile'
+    | 'startGathering'
+    | 'startProduction'
+    | 'startCombat'
+    | 'claimMission'
+    | 'stopMission'
+    | 'equipModule'
+    | 'unequipModule'
+    | 'repairHull'
+    | 'travelToSector'
+    | 'setCombatSettings'
+  args?: readonly unknown[]
+}
+
+interface BrowserClients {
+  account: Address
+  walletClient: WalletClient
+}
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const MARKET_READ_LIMIT = 120n
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
-export const CHAIN_SETTLE_CYCLE_LIMIT = 200
-const CHAIN_MARKET_SCAN_LIMIT = 120
-const CHAIN_SAFETY_DURATION_SECONDS = 7 * 24 * 60 * 60
-const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000'
-const GAS_BUFFER_BPS = 5_000n
-const MIN_GAS_BUFFER = 100_000n
-const CONTRACT_FOOD_ITEMS = new Set<ItemId>(['cookedMinnow', 'cookedTrout'])
+export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
 
 export const MEGAETH_TESTNET_PARAMS = {
   chainId: MEGAETH_CHAIN_ID_HEX,
@@ -74,95 +96,176 @@ export const MEGAETH_TESTNET_PARAMS = {
   blockExplorerUrls: ['https://megaeth-testnet-v2.blockscout.com'],
 }
 
-const CONTRACT_ACTIVITY_BY_ID = Object.fromEntries(
-  Object.entries(CONTRACT_ACTIVITY_IDS).map(([activityId, value]) => [
-    value.id,
-    activityId as ActivityId,
-  ]),
-) as Record<number, ActivityId | undefined>
+let mossInitialisePromise: Promise<void> | null = null
 
-const ITEM_BY_CONTRACT_ID = Object.fromEntries(
-  Object.entries(CONTRACT_ITEM_IDS).map(([itemId, contractId]) => [
-    contractId.toString(),
-    itemId as ItemId,
-  ]),
-) as Record<string, ItemId | undefined>
-
-const AREA_BY_CONTRACT_ID = Object.fromEntries(
-  Object.entries(CONTRACT_AREA_IDS).map(([areaId, contractId]) => [
-    contractId.toString(),
-    areaId as AreaId,
-  ]),
-) as Record<string, AreaId | undefined>
-
-const idleIslesAbi = parseAbi([
-  'function activeTask(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
+const IDLE_GALACTICA_ABI = parseAbi([
+  'function activeMission(address player) view returns (uint16 activityId, uint64 startedAt, uint64 lastResolvedAt)',
   'function balanceOf(address account, uint256 id) view returns (uint256)',
-  'function buy(uint256 orderId, uint64 amount)',
-  'function claim()',
-  'function cancelOrder(uint256 orderId)',
-  'function clearAutoSettle()',
-  'function configureAutoSettle(address operator, uint64 expiresAt, uint16 maxCyclesPerSettle, uint16 stopAtHp, bool autoEat, uint16 maxFoodPerSettle, uint256 foodItemId)',
-  'function createOrder(uint256 itemId, uint64 amount, uint128 priceEach)',
+  'function balanceOfBatch(address[] accounts, uint256[] ids) view returns (uint256[])',
+  'function claimMission()',
+  'function combatSettings(address player) view returns (bool autoRepair, uint16 stopAtHull, uint256 repairItemId, uint16 maxRepairItemsPerClaim)',
   'function createProfile()',
-  'function currentAreaId(address player) view returns (uint8)',
-  'function currentHitpoints(address player) view returns (uint16)',
-  'function eatFood(uint256 itemId)',
-  'function equip(uint256 itemId)',
-  'function equippedItem(address player, uint8 slot) view returns (uint256)',
+  'function currentHull(address player) view returns (uint16)',
+  'function currentSectorId(address player) view returns (uint8)',
+  'function equipModule(uint256 itemId)',
   'function hasProfile(address player) view returns (bool)',
-  'function isAreaUnlocked(address player, uint8 areaId) view returns (bool)',
-  'function maxHitpoints(address player) view returns (uint256)',
-  'function nextOrderId() view returns (uint256)',
-  'function orders(uint256 orderId) view returns (address seller, uint256 itemId, uint128 priceEach, uint64 amountRemaining)',
-  'function pendingCycles(address player) view returns (uint256)',
+  'function isApprovedForAll(address account, address operator) view returns (bool)',
+  'function isSectorUnlocked(address player, uint8 sectorId) view returns (bool)',
+  'function maxHull(address player) view returns (uint16)',
+  'function moduleInSlot(address player, uint8 slot) view returns (uint256)',
+  'function repairHull(uint256 itemId)',
+  'function setApprovalForAll(address operator, bool approved)',
+  'function setCombatSettings(bool autoRepair, uint16 stopAtHull, uint256 repairItemId, uint16 maxRepairItemsPerClaim)',
   'function skillXp(address player, uint8 skill) view returns (uint64)',
-  'function startArtisan(uint16 activityId)',
   'function startCombat(uint16 activityId)',
-  'function startGather(uint16 activityId)',
-  'function travelToArea(uint8 areaId)',
-  'function unequip(uint8 slot)',
+  'function startGathering(uint16 activityId)',
+  'function startProduction(uint16 activityId)',
+  'function stopMission()',
+  'function travelToSector(uint8 sectorId)',
+  'function unequipModule(uint8 slot)',
 ])
 
-type IdleIslesWriteRequest =
-  | { functionName: 'buy'; args: readonly [orderId: bigint, amount: bigint] }
-  | { functionName: 'cancelOrder'; args: readonly [orderId: bigint] }
-  | { functionName: 'claim'; args: readonly [] }
-  | { functionName: 'clearAutoSettle'; args: readonly [] }
-  | {
-      functionName: 'configureAutoSettle'
-      args: readonly [
-        operator: Address,
-        expiresAt: bigint,
-        maxCyclesPerSettle: number,
-        stopAtHp: number,
-        autoEat: boolean,
-        maxFoodPerSettle: number,
-        foodItemId: bigint,
-      ]
-    }
-  | { functionName: 'createOrder'; args: readonly [itemId: bigint, amount: bigint, priceEach: bigint] }
-  | { functionName: 'createProfile'; args: readonly [] }
-  | { functionName: 'eatFood'; args: readonly [itemId: bigint] }
-  | { functionName: 'equip'; args: readonly [itemId: bigint] }
-  | { functionName: 'startArtisan'; args: readonly [activityId: number] }
-  | { functionName: 'startCombat'; args: readonly [activityId: number] }
-  | { functionName: 'startGather'; args: readonly [activityId: number] }
-  | { functionName: 'travelToArea'; args: readonly [areaId: number] }
-  | { functionName: 'unequip'; args: readonly [slot: number] }
+const TRADE_RELAY_ABI = parseAbi([
+  'function buy(uint256 orderId, uint64 amount)',
+  'function cancelOrder(uint256 orderId)',
+  'function createOrder(uint256 itemId, uint64 amount, uint128 priceEach)',
+  'function nextOrderId() view returns (uint256)',
+  'function orders(uint256 orderId) view returns (address seller, uint256 itemId, uint128 priceEach, uint64 amountRemaining)',
+])
 
 const publicClient = createPublicClient({
   chain: megaethTestnet,
   transport: http(),
 })
 
-export function getIdleIslesAddress(): Address | null {
-  const address =
-    import.meta.env.VITE_IDLE_ISLES_ADDRESS ?? import.meta.env.VITE_IDLE_ODYSSEY_ADDRESS
-  return typeof address === 'string' && isAddress(address) ? address : null
+const ITEM_BY_CHAIN_ID = new Map(
+  (Object.entries(CONTRACT_ITEM_IDS) as [ItemId, bigint][]).map(([itemId, chainId]) => [
+    chainId,
+    itemId,
+  ]),
+)
+
+const SECTOR_BY_CHAIN_ID = new Map(
+  (Object.entries(CONTRACT_SECTOR_IDS) as [SectorId, number][]).map(([sectorId, chainId]) => [
+    chainId,
+    sectorId,
+  ]),
+)
+
+const ACTIVITY_BY_CHAIN_ID = new Map(
+  (Object.entries(CONTRACT_ACTIVITY_IDS) as [ActivityId, { id: number; kind: ContractStartKind }][]).map(
+    ([activityId, entry]) => [entry.id, activityId],
+  ),
+)
+
+export const CHAIN_CONTENT_IDS: ChainContentIds = {
+  sectors: CONTRACT_SECTOR_IDS,
+  items: CONTRACT_ITEM_IDS,
+  activities: CONTRACT_ACTIVITY_IDS,
 }
 
-export function getContractActivity(activityId: ActivityId) {
+export const MOSS_GAMEPLAY_CALLS = [
+  'createProfile()',
+  'startGathering(uint16)',
+  'startProduction(uint16)',
+  'startCombat(uint16)',
+  'claimMission()',
+  'stopMission()',
+  'equipModule(uint256)',
+  'unequipModule(uint8)',
+  'repairHull(uint256)',
+  'travelToSector(uint8)',
+  'setCombatSettings(bool,uint16,uint256,uint16)',
+] as const
+
+export function getIdleGalacticaAddress(): Address | null {
+  return readAddress('VITE_IDLE_GALACTICA_ADDRESS')
+}
+
+export function getTradeRelayAddress(): Address | null {
+  return readAddress('VITE_TRADE_RELAY_ADDRESS')
+}
+
+export function isChainModeReady(): boolean {
+  return Boolean(getIdleGalacticaAddress() && getTradeRelayAddress())
+}
+
+export async function connectWallet(): Promise<Address> {
+  return requestWalletAccount()
+}
+
+export async function addMegaEthTestnet(): Promise<void> {
+  await getEthereumProvider().request({
+    method: 'wallet_addEthereumChain',
+    params: [MEGAETH_TESTNET_PARAMS],
+  })
+}
+
+export async function initialiseMossWallet(): Promise<void> {
+  mossInitialisePromise ??= mega
+    .initialise({
+      network: 'testnet',
+      logging: 'error',
+    })
+    .then(() => undefined)
+
+  return mossInitialisePromise
+}
+
+export async function getMossWalletStatus(): Promise<ConnectionStatus> {
+  await initialiseMossWallet()
+  return mega.status()
+}
+
+export async function connectMossWallet(): Promise<Address | null> {
+  await initialiseMossWallet()
+  const status = await mega.connect()
+  return status.status === 'connected' ? toAddress(status.address) : null
+}
+
+export async function openMossDeposit(): Promise<void> {
+  await initialiseMossWallet()
+  await mega.deposit()
+}
+
+export async function hasMossGameplaySession(account?: Address | null): Promise<boolean> {
+  const address = getIdleGalacticaAddress()
+  if (!address) return false
+
+  await initialiseMossWallet()
+  const permissions = await mega.getPermissions(account ?? undefined)
+  const grant = permissions?.permissions
+  const expiresSoon = Math.floor(Date.now() / 1000) + 60
+
+  if (!grant || grant.expiry <= expiresSoon) return false
+
+  const calls = grant.permissions.calls
+  const gameAddress = address.toLowerCase()
+
+  return MOSS_GAMEPLAY_CALLS.every((signature) =>
+    calls.some(
+      (call) =>
+        call.to.toLowerCase() === gameAddress &&
+        call.signature.toLowerCase() === signature.toLowerCase(),
+    ),
+  )
+}
+
+export async function grantMossGameplaySession(): Promise<void> {
+  await initialiseMossWallet()
+  const result = await mega.grantPermissions({
+    permissions: createMossGameplayPermission(),
+  })
+
+  if (result.status !== 'approved') {
+    throw new Error('MOSS gameplay session was not approved.')
+  }
+}
+
+export function getContractActivity(activityId: ActivityId): {
+  id: number
+  kind: ContractStartKind
+} | null {
   return CONTRACT_ACTIVITY_IDS[activityId] ?? null
 }
 
@@ -170,473 +273,651 @@ export function getContractItemId(itemId: ItemId): bigint {
   return CONTRACT_ITEM_IDS[itemId]
 }
 
-export function toAddress(value: string | undefined): Address | null {
-  return value && isAddress(value) ? value : null
+export function getContractSectorId(sectorId: SectorId): number {
+  return CONTRACT_SECTOR_IDS[sectorId]
 }
 
 export async function readChainSnapshot(account: Address): Promise<ChainSnapshot> {
-  const address = requireIdleIslesAddress()
-  const [hasProfile, marketOrders] = await Promise.all([
-    publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'hasProfile',
-      args: [account],
-    }),
-    readChainMarketOrders(address, account),
-  ])
+  const gameAddress = requireIdleGalacticaAddress()
+  const hasProfile = await publicClient.readContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'hasProfile',
+    args: [account],
+  })
+  const marketOrders = await readTradeRelayOrders(publicClient)
+  const blockNumber = await publicClient.getBlockNumber()
 
   if (!hasProfile) {
     return {
+      account,
+      blockNumber,
+      game: createEmptyChainState(marketOrders),
       hasProfile,
-      skills: createEmptySkills(),
-      inventory: createEmptyInventory(),
-      equipment: createEmptyEquipment(),
-      marketOrders,
-      currentHitpoints: 0,
-      maxHitpoints: 0,
-      currentAreaId: STARTER_AREA_ID,
-      unlockedAreaIds: [STARTER_AREA_ID],
-      active: null,
-      pendingCycles: 0,
     }
   }
 
   const [
-    currentHitpoints,
-    maxHitpoints,
-    activeTask,
-    pendingCycles,
-    currentAreaValue,
-    areaUnlockedValues,
-    skillValues,
     balances,
-    equippedValues,
+    skillXp,
+    activeMission,
+    settings,
+    currentHull,
+    maxHull,
+    sectorId,
+    unlockedSectors,
+    modules,
   ] = await Promise.all([
+    readCargoBalances(publicClient, account),
+    readSkillXp(publicClient, account),
     publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'currentHitpoints',
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'activeMission',
       args: [account],
     }),
     publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'maxHitpoints',
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'combatSettings',
       args: [account],
     }),
     publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'activeTask',
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'currentHull',
       args: [account],
     }),
     publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'pendingCycles',
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'maxHull',
       args: [account],
     }),
     publicClient.readContract({
-      address,
-      abi: idleIslesAbi,
-      functionName: 'currentAreaId',
+      address: gameAddress,
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'currentSectorId',
       args: [account],
     }),
-    Promise.all(
-      AREAS.map((area) =>
-        publicClient.readContract({
-          address,
-          abi: idleIslesAbi,
-          functionName: 'isAreaUnlocked',
-          args: [account, CONTRACT_AREA_IDS[area.id]],
-        }),
-      ),
-    ),
-    Promise.all(
-      SKILLS.map((_, index) =>
-        publicClient.readContract({
-          address,
-          abi: idleIslesAbi,
-          functionName: 'skillXp',
-          args: [account, index],
-        }),
-      ),
-    ),
-    Promise.all(
-      (Object.keys(CONTRACT_ITEM_IDS) as ItemId[]).map((itemId) =>
-        publicClient.readContract({
-          address,
-          abi: idleIslesAbi,
-          functionName: 'balanceOf',
-          args: [account, CONTRACT_ITEM_IDS[itemId]],
-        }),
-      ),
-    ),
-    Promise.all(
-      EQUIPMENT_SLOTS.map((_, index) =>
-        publicClient.readContract({
-          address,
-          abi: idleIslesAbi,
-          functionName: 'equippedItem',
-          args: [account, index],
-        }),
-      ),
-    ),
+    readUnlockedSectors(publicClient, account),
+    readShipModules(publicClient, account),
   ])
 
+  const game = createInitialState(Date.now())
+  game.cargo = balances
+  game.skills = skillXp
+  game.currentSectorId = sectorFromChainId(Number(sectorId))
+  game.unlockedSectors = unlockedSectors
+  game.ship = {
+    currentHull: Number(currentHull),
+    maxHull: Number(maxHull),
+    modules,
+  }
+  game.activeMission = activeMissionFromChain(activeMission)
+  game.combatSettings = combatSettingsFromChain(settings)
+  game.marketOrders = marketOrders
+  game.eventLog = [`On-chain profile synced at block ${blockNumber.toString()}.`]
+  game.lastSeenAt = Date.now()
+
   return {
+    account,
+    blockNumber,
+    game,
     hasProfile,
-    skills: SKILLS.reduce((book, skill, index) => {
-      book[skill.id] = { xp: Number(skillValues[index]) }
-      return book
-    }, {} as SkillBook),
-    inventory: (Object.keys(CONTRACT_ITEM_IDS) as ItemId[]).reduce((bag, itemId, index) => {
-      bag[itemId] = Number(balances[index])
-      return bag
-    }, createEmptyInventory()),
-    equipment: EQUIPMENT_SLOTS.reduce((gear, slot, index) => {
-      gear[slot] = ITEM_BY_CONTRACT_ID[equippedValues[index].toString()] ?? null
-      return gear
-    }, createEmptyEquipment()),
-    marketOrders,
-    currentHitpoints: Number(currentHitpoints),
-    maxHitpoints: Number(maxHitpoints),
-    currentAreaId: formatChainArea(currentAreaValue),
-    unlockedAreaIds: formatUnlockedAreas(areaUnlockedValues),
-    active: formatActiveTask(activeTask),
-    pendingCycles: Number(pendingCycles),
   }
 }
 
-export async function writeCreateProfile(provider: BrowserEthereumProvider, account: Address) {
-  return writeIdleIslesContract(provider, account, { functionName: 'createProfile', args: [] })
+export async function writeChainRequest(request: ChainWriteRequest): Promise<Hash> {
+  switch (request.functionName) {
+    case 'createProfile':
+      return writeCreateProfile()
+    case 'claimMission':
+      return submitGameWrite('claimMission', [])
+    case 'stopMission':
+      return submitGameWrite('stopMission', [])
+    case 'startGathering':
+      return submitGameWrite('startGathering', [Number(request.args?.[0] ?? 0)])
+    case 'startProduction':
+      return submitGameWrite('startProduction', [Number(request.args?.[0] ?? 0)])
+    case 'startCombat':
+      return submitGameWrite('startCombat', [Number(request.args?.[0] ?? 0)])
+    case 'equipModule':
+      return submitGameWrite('equipModule', [BigInt(request.args?.[0] as bigint)])
+    case 'unequipModule':
+      return submitGameWrite('unequipModule', [Number(request.args?.[0] ?? 0)])
+    case 'repairHull':
+      return submitGameWrite('repairHull', [BigInt(request.args?.[0] as bigint)])
+    case 'travelToSector':
+      return submitGameWrite('travelToSector', [Number(request.args?.[0] ?? 0)])
+    case 'setCombatSettings':
+      return submitGameWrite('setCombatSettings', request.args ?? [])
+  }
 }
 
-export async function writeClaim(provider: BrowserEthereumProvider, account: Address) {
-  return writeIdleIslesContract(provider, account, { functionName: 'claim', args: [] })
+export async function writeCreateProfile(): Promise<Hash> {
+  return submitGameWrite('createProfile', [])
 }
 
-export async function writeStartActivity(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  activityId: ActivityId,
-) {
+export async function writeStartMission(activityId: ActivityId): Promise<Hash> {
   const activity = getContractActivity(activityId)
-  if (!activity) {
-    throw new Error('Activity is not available onchain yet.')
-  }
+  if (!activity) throw new Error('This mission is not registered on-chain.')
 
-  if (activity.kind === 'combat') {
-    return writeIdleIslesContract(provider, account, {
-      functionName: 'startCombat',
-      args: [activity.id],
-    })
+  if (activity.kind === 'gathering') {
+    return submitGameWrite('startGathering', [activity.id])
   }
-
-  if (activity.kind === 'gather') {
-    return writeIdleIslesContract(provider, account, {
-      functionName: 'startGather',
-      args: [activity.id],
-    })
+  if (activity.kind === 'production') {
+    return submitGameWrite('startProduction', [activity.id])
   }
-
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'startArtisan',
-    args: [activity.id],
-  })
+  return submitGameWrite('startCombat', [activity.id])
 }
 
-export async function writeEquip(
-  provider: BrowserEthereumProvider,
+export async function writeStopMission(): Promise<Hash> {
+  return submitGameWrite('stopMission', [])
+}
+
+export async function writeClaimMission(): Promise<Hash> {
+  return submitGameWrite('claimMission', [])
+}
+
+export async function writeEquipModule(itemId: ItemId): Promise<Hash> {
+  return submitGameWrite('equipModule', [getContractItemId(itemId)])
+}
+
+export async function writeUnequipModule(slot: ModuleSlot): Promise<Hash> {
+  return submitGameWrite('unequipModule', [MODULE_SLOTS.indexOf(slot)])
+}
+
+export async function writeRepairHull(itemId: ItemId): Promise<Hash> {
+  return submitGameWrite('repairHull', [getContractItemId(itemId)])
+}
+
+export async function writeTravelToSector(sectorId: SectorId): Promise<Hash> {
+  return submitGameWrite('travelToSector', [getContractSectorId(sectorId)])
+}
+
+export async function writeCombatSettings(settings: CombatSettings): Promise<Hash> {
+  return submitGameWrite('setCombatSettings', [
+    settings.autoRepair,
+    settings.stopAtHull,
+    getContractItemId(settings.repairItemId),
+    settings.maxRepairItemsPerClaim,
+  ])
+}
+
+export async function writeMossCreateProfile(): Promise<Hash> {
+  return writeMossGameContract('createProfile', [])
+}
+
+export async function writeMossStartMission(activityId: ActivityId): Promise<Hash> {
+  const activity = getContractActivity(activityId)
+  if (!activity) throw new Error('This mission is not registered on-chain.')
+
+  if (activity.kind === 'gathering') {
+    return writeMossGameContract('startGathering', [activity.id])
+  }
+  if (activity.kind === 'production') {
+    return writeMossGameContract('startProduction', [activity.id])
+  }
+  return writeMossGameContract('startCombat', [activity.id])
+}
+
+export async function writeMossClaimMission(): Promise<Hash> {
+  return writeMossGameContract('claimMission', [])
+}
+
+export async function writeMossStopMission(): Promise<Hash> {
+  return writeMossGameContract('stopMission', [])
+}
+
+export async function writeMossEquipModule(itemId: ItemId): Promise<Hash> {
+  return writeMossGameContract('equipModule', [getContractItemId(itemId)])
+}
+
+export async function writeMossUnequipModule(slot: ModuleSlot): Promise<Hash> {
+  return writeMossGameContract('unequipModule', [MODULE_SLOTS.indexOf(slot)])
+}
+
+export async function writeMossRepairHull(itemId: ItemId): Promise<Hash> {
+  return writeMossGameContract('repairHull', [getContractItemId(itemId)])
+}
+
+export async function writeMossCombatSettings(settings: CombatSettings): Promise<Hash> {
+  return writeMossGameContract('setCombatSettings', [
+    settings.autoRepair,
+    settings.stopAtHull,
+    getContractItemId(settings.repairItemId),
+    settings.maxRepairItemsPerClaim,
+  ])
+}
+
+export async function writeMossTravelToSector(sectorId: SectorId): Promise<Hash> {
+  return writeMossGameContract('travelToSector', [getContractSectorId(sectorId)], { silent: false })
+}
+
+export async function writeBuyTradeRelayOrder(orderId: string): Promise<Hash> {
+  await ensureTradeRelayApproval()
+  return submitTradeRelayWrite('buy', [BigInt(orderId), 1n])
+}
+
+export async function writeCreateTradeRelayOrder(itemId: ItemId, unitPrice: number): Promise<Hash> {
+  await ensureTradeRelayApproval()
+  return submitTradeRelayWrite('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)])
+}
+
+export async function writeMossBuyTradeRelayOrder(account: Address, orderId: string): Promise<Hash> {
+  await ensureMossTradeRelayApproval(account)
+  return writeMossTradeRelayContract('buy', [BigInt(orderId), 1n])
+}
+
+export async function writeMossCreateTradeRelayOrder(
   account: Address,
   itemId: ItemId,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'equip',
-    args: [getContractItemId(itemId)],
-  })
+  unitPrice: number,
+): Promise<Hash> {
+  await ensureMossTradeRelayApproval(account)
+  return writeMossTradeRelayContract('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)])
 }
 
-export async function writeUnequip(
-  provider: BrowserEthereumProvider,
+async function readCargoBalances(
+  publicClient: PublicClient,
   account: Address,
-  slotIndex: number,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'unequip',
-    args: [slotIndex],
+): Promise<GameState['cargo']> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const itemIds = Object.keys(ITEMS) as ItemId[]
+  const balances = await publicClient.readContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'balanceOfBatch',
+    args: [itemIds.map(() => account), itemIds.map((itemId) => getContractItemId(itemId))],
   })
+
+  return itemIds.reduce((cargo, itemId, index) => {
+    cargo[itemId] = safeNumber(balances[index] ?? 0n)
+    return cargo
+  }, {} as GameState['cargo'])
 }
 
-export async function writeEatFood(
-  provider: BrowserEthereumProvider,
+async function readSkillXp(
+  publicClient: PublicClient,
   account: Address,
-  itemId: ItemId,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'eatFood',
-    args: [getContractItemId(itemId)],
-  })
-}
-
-export async function writeConfigureCombatSafety(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  settings: {
-    autoEat: boolean
-    stopAtHitpoints: number
-    foodItemId: ItemId | null
-    maxFoodPerSettle: number
-  },
-) {
-  if (
-    settings.autoEat &&
-    (!settings.foodItemId || !CONTRACT_FOOD_ITEMS.has(settings.foodItemId))
-  ) {
-    throw new Error('Select cooked Minnow or cooked Trout for onchain auto-eat.')
-  }
-
-  const latestBlock = await publicClient.getBlock()
-  const expiresAt = latestBlock.timestamp + BigInt(CHAIN_SAFETY_DURATION_SECONDS)
-  const foodItemId =
-    settings.autoEat && settings.foodItemId ? getContractItemId(settings.foodItemId) : 0n
-
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'configureAutoSettle',
-    args: [
-      ZERO_ADDRESS,
-      expiresAt,
-      CHAIN_SETTLE_CYCLE_LIMIT,
-      settings.stopAtHitpoints,
-      settings.autoEat,
-      settings.maxFoodPerSettle,
-      foodItemId,
-    ],
-  })
-}
-
-export async function writeClearCombatSafety(provider: BrowserEthereumProvider, account: Address) {
-  return writeIdleIslesContract(provider, account, { functionName: 'clearAutoSettle', args: [] })
-}
-
-export async function writeTravelToArea(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  areaId: AreaId,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'travelToArea',
-    args: [CONTRACT_AREA_IDS[areaId]],
-  })
-}
-
-export async function writeCreateOrder(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  itemId: ItemId,
-  amount: number,
-  priceEach: number,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'createOrder',
-    args: [getContractItemId(itemId), BigInt(amount), BigInt(priceEach)],
-  })
-}
-
-export async function writeBuyOrder(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  orderId: bigint,
-  amount = 1,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'buy',
-    args: [orderId, BigInt(amount)],
-  })
-}
-
-export async function writeCancelOrder(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  orderId: bigint,
-) {
-  return writeIdleIslesContract(provider, account, {
-    functionName: 'cancelOrder',
-    args: [orderId],
-  })
-}
-
-export function getChainOrderId(orderId: string): bigint | null {
-  if (!orderId.startsWith('chain-')) {
-    return null
-  }
-
-  try {
-    return BigInt(orderId.slice('chain-'.length))
-  } catch {
-    return null
-  }
-}
-
-function createEmptySkills(): SkillBook {
-  return SKILLS.reduce((book, skill) => {
-    book[skill.id] = { xp: 0 }
-    return book
-  }, {} as SkillBook)
-}
-
-function createEmptyInventory(): Inventory {
-  return (Object.keys(ITEMS) as ItemId[]).reduce((bag, itemId) => {
-    bag[itemId] = 0
-    return bag
-  }, {} as Inventory)
-}
-
-function createEmptyEquipment(): Equipment {
-  return EQUIPMENT_SLOTS.reduce((gear, slot) => {
-    gear[slot] = null
-    return gear
-  }, {} as Equipment)
-}
-
-function formatActiveTask(activeTask: readonly [number, bigint, bigint]) {
-  const activityId = CONTRACT_ACTIVITY_BY_ID[Number(activeTask[0])]
-  if (!activityId) {
-    return null
-  }
-
-  return {
-    id: activityId,
-    startedAt: Number(activeTask[1]) * 1000,
-    lastClaimAt: Number(activeTask[2]) * 1000,
-  }
-}
-
-function formatChainArea(areaId: number): AreaId {
-  return AREA_BY_CONTRACT_ID[areaId.toString()] ?? STARTER_AREA_ID
-}
-
-function formatUnlockedAreas(areaUnlockedValues: readonly boolean[]): AreaId[] {
-  const unlockedAreaIds = AREAS.flatMap((area, index) =>
-    areaUnlockedValues[index] ? [area.id] : [],
+): Promise<GameState['skills']> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const xp = await Promise.all(
+    SKILLS.map((_, index) =>
+      publicClient.readContract({
+        address: gameAddress,
+        abi: IDLE_GALACTICA_ABI,
+        functionName: 'skillXp',
+        args: [account, index],
+      }),
+    ),
   )
 
-  return unlockedAreaIds.includes(STARTER_AREA_ID)
-    ? unlockedAreaIds
-    : [STARTER_AREA_ID, ...unlockedAreaIds]
+  return SKILLS.reduce((skills, skill, index) => {
+    skills[skill.id] = { xp: safeNumber(xp[index] ?? 0n) }
+    return skills
+  }, {} as GameState['skills'])
 }
 
-async function readChainMarketOrders(
-  address: Address,
+async function readUnlockedSectors(
+  publicClient: PublicClient,
   account: Address,
-): Promise<MarketOrder[]> {
+): Promise<GameState['unlockedSectors']> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const unlocked = await Promise.all(
+    SECTORS.map((sector) =>
+      publicClient.readContract({
+        address: gameAddress,
+        abi: IDLE_GALACTICA_ABI,
+        functionName: 'isSectorUnlocked',
+        args: [account, getContractSectorId(sector.id)],
+      }),
+    ),
+  )
+
+  return SECTORS.reduce((record, sector, index) => {
+    record[sector.id] = Boolean(unlocked[index])
+    return record
+  }, {} as GameState['unlockedSectors'])
+}
+
+async function readShipModules(
+  publicClient: PublicClient,
+  account: Address,
+): Promise<GameState['ship']['modules']> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const moduleIds = await Promise.all(
+    MODULE_SLOTS.map((_, index) =>
+      publicClient.readContract({
+        address: gameAddress,
+        abi: IDLE_GALACTICA_ABI,
+        functionName: 'moduleInSlot',
+        args: [account, index],
+      }),
+    ),
+  )
+
+  return MODULE_SLOTS.reduce((modules, slot, index) => {
+    const itemId = itemFromChainId(moduleIds[index] ?? 0n)
+    if (itemId) modules[slot] = itemId
+    return modules
+  }, {} as GameState['ship']['modules'])
+}
+
+async function readTradeRelayOrders(publicClient: PublicClient): Promise<MarketOrder[]> {
+  const tradeRelayAddress = getTradeRelayAddress()
+  if (!tradeRelayAddress) return []
+
   const nextOrderId = await publicClient.readContract({
-    address,
-    abi: idleIslesAbi,
+    address: tradeRelayAddress,
+    abi: TRADE_RELAY_ABI,
     functionName: 'nextOrderId',
   })
-  const latestOrderId = toSafeNumber(nextOrderId) - 1
-
-  if (latestOrderId <= 0) {
-    return []
-  }
-
-  const firstOrderId = Math.max(1, latestOrderId - CHAIN_MARKET_SCAN_LIMIT + 1)
-  const orderIds = Array.from(
-    { length: latestOrderId - firstOrderId + 1 },
-    (_, index) => BigInt(firstOrderId + index),
-  )
+  const firstOrderId = nextOrderId > MARKET_READ_LIMIT ? nextOrderId - MARKET_READ_LIMIT : 1n
+  const orderIds = rangeBigInt(firstOrderId, nextOrderId)
 
   const orders = await Promise.all(
-    orderIds.map(async (orderId) => {
-      const order = await publicClient.readContract({
-        address,
-        abi: idleIslesAbi,
+    orderIds.map((orderId) =>
+      publicClient.readContract({
+        address: tradeRelayAddress,
+        abi: TRADE_RELAY_ABI,
         functionName: 'orders',
         args: [orderId],
-      })
-
-      return formatChainOrder(account, orderId, order)
-    }),
+      }),
+    ),
   )
 
-  return orders.filter((order): order is MarketOrder => Boolean(order))
+  return orders.flatMap((order, index) => {
+    const seller = tupleField<Address>(order, 'seller', 0)
+    const amountRemaining = tupleField<bigint>(order, 'amountRemaining', 3)
+    const itemId = itemFromChainId(tupleField<bigint>(order, 'itemId', 1))
+
+    if (!itemId || seller.toLowerCase() === ZERO_ADDRESS || amountRemaining === 0n) {
+      return []
+    }
+
+    return [
+      {
+        id: orderIds[index].toString(),
+        itemId,
+        quantity: safeNumber(amountRemaining),
+        unitPrice: safeNumber(tupleField<bigint>(order, 'priceEach', 2)),
+      },
+    ]
+  })
 }
 
-function formatChainOrder(
-  account: Address,
-  orderId: bigint,
-  order: readonly [Address, bigint, bigint, bigint],
-): MarketOrder | null {
-  const [seller, contractItemId, priceEach, amountRemaining] = order
-  const itemId = ITEM_BY_CONTRACT_ID[contractItemId.toString()]
-
-  if (!itemId || amountRemaining === 0n) {
-    return null
-  }
+function activeMissionFromChain(activeMission: unknown): GameState['activeMission'] {
+  const activityChainId = Number(tupleField<bigint>(activeMission, 'activityId', 0))
+  const activityId = ACTIVITY_BY_CHAIN_ID.get(activityChainId)
+  if (!activityId) return null
 
   return {
-    id: `chain-${orderId.toString()}`,
-    itemId,
-    seller: seller.toLowerCase() === account.toLowerCase() ? 'Player' : 'Trader',
-    side: 'sell',
-    quantity: toSafeNumber(amountRemaining),
-    unitPrice: Math.max(1, toSafeNumber(priceEach)),
-    createdAt: toSafeNumber(orderId),
+    activityId,
+    startedAt: safeNumber(tupleField<bigint>(activeMission, 'startedAt', 1)) * 1000,
+    lastClaimAt: safeNumber(tupleField<bigint>(activeMission, 'lastResolvedAt', 2)) * 1000,
   }
 }
 
-function toSafeNumber(value: bigint): number {
-  return Number(value > BigInt(Number.MAX_SAFE_INTEGER) ? BigInt(Number.MAX_SAFE_INTEGER) : value)
+function combatSettingsFromChain(settings: unknown): CombatSettings {
+  return {
+    autoRepair: tupleField<boolean>(settings, 'autoRepair', 0),
+    stopAtHull: Number(tupleField<number>(settings, 'stopAtHull', 1)),
+    repairItemId: itemFromChainId(tupleField<bigint>(settings, 'repairItemId', 2)) ?? 'repairGel',
+    maxRepairItemsPerClaim: Number(tupleField<number>(settings, 'maxRepairItemsPerClaim', 3)),
+  }
 }
 
-async function writeIdleIslesContract(
-  provider: BrowserEthereumProvider,
-  account: Address,
-  request: IdleIslesWriteRequest,
-) {
-  const address = requireIdleIslesAddress()
-  const gasEstimate = await publicClient.estimateContractGas({
-    account,
-    address,
-    abi: idleIslesAbi,
-    ...request,
-  })
-  const gas = withGasBuffer(gasEstimate)
-  const walletClient = createIdleWalletClient(provider, account)
-  const hash = await walletClient.writeContract({
-    address,
-    abi: idleIslesAbi,
-    ...request,
-    gas,
-  })
+function createEmptyChainState(marketOrders: MarketOrder[]): GameState {
+  const game = createInitialState(Date.now())
+  for (const itemId of Object.keys(ITEMS) as ItemId[]) {
+    game.cargo[itemId] = 0
+  }
+  for (const skill of SKILLS) {
+    game.skills[skill.id] = { xp: 0 }
+  }
+  game.ship = {
+    currentHull: 0,
+    maxHull: 100,
+    modules: {},
+  }
+  game.currentSectorId = 'orbitalDock'
+  game.unlockedSectors = {
+    orbitalDock: true,
+    innerBelt: false,
+  }
+  game.activeMission = null
+  game.marketOrders = marketOrders
+  game.eventLog = ['No on-chain profile found. Create a ship profile to begin.']
+  return game
+}
 
-  await waitForTransaction(hash)
+async function submitGameWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
+  const { account, walletClient } = await getBrowserClients()
+  const hash = await walletClient.writeContract({
+    account,
+    chain: null,
+    address: requireIdleGalacticaAddress(),
+    abi: IDLE_GALACTICA_ABI,
+    functionName: functionName as never,
+    args: args as never,
+  })
+  await publicClient.waitForTransactionReceipt({ hash })
   return hash
 }
 
-function withGasBuffer(gasEstimate: bigint): bigint {
-  return gasEstimate + (gasEstimate * GAS_BUFFER_BPS) / 10_000n + MIN_GAS_BUFFER
-}
-
-function createIdleWalletClient(provider: BrowserEthereumProvider, account: Address) {
-  return createWalletClient({
-    account,
-    chain: megaethTestnet,
-    transport: custom(provider),
+async function writeMossGameContract(
+  functionName: string,
+  args: readonly unknown[],
+  options: { silent?: boolean } = {},
+): Promise<Hash> {
+  return callMossContract({
+    address: requireIdleGalacticaAddress(),
+    abi: IDLE_GALACTICA_ABI,
+    functionName,
+    args: [...args],
+    silent: options.silent ?? true,
   })
 }
 
-async function waitForTransaction(hash: Hex) {
+async function submitTradeRelayWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
+  const { account, walletClient } = await getBrowserClients()
+  const hash = await walletClient.writeContract({
+    account,
+    chain: null,
+    address: requireTradeRelayAddress(),
+    abi: TRADE_RELAY_ABI,
+    functionName: functionName as never,
+    args: args as never,
+  })
+  await publicClient.waitForTransactionReceipt({ hash })
+  return hash
+}
+
+async function writeMossTradeRelayContract(
+  functionName: string,
+  args: readonly unknown[],
+): Promise<Hash> {
+  return callMossContract({
+    address: requireTradeRelayAddress(),
+    abi: TRADE_RELAY_ABI,
+    functionName,
+    args: [...args],
+    silent: false,
+  })
+}
+
+async function ensureTradeRelayApproval(): Promise<void> {
+  const { account, walletClient } = await getBrowserClients()
+  const gameAddress = requireIdleGalacticaAddress()
+  const tradeRelayAddress = requireTradeRelayAddress()
+  const approved = await publicClient.readContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'isApprovedForAll',
+    args: [account, tradeRelayAddress],
+  })
+
+  if (approved) return
+
+  const hash = await walletClient.writeContract({
+    account,
+    chain: null,
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'setApprovalForAll',
+    args: [tradeRelayAddress, true],
+  })
   await publicClient.waitForTransactionReceipt({ hash })
 }
 
-function requireIdleIslesAddress(): Address {
-  const address = getIdleIslesAddress()
-  if (!address) {
-    throw new Error('Set VITE_IDLE_ISLES_ADDRESS to use chain mode.')
+async function ensureMossTradeRelayApproval(account: Address): Promise<void> {
+  const gameAddress = requireIdleGalacticaAddress()
+  const tradeRelayAddress = requireTradeRelayAddress()
+  const approved = await publicClient.readContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'isApprovedForAll',
+    args: [account, tradeRelayAddress],
+  })
+
+  if (approved) return
+
+  await callMossContract({
+    address: gameAddress,
+    abi: IDLE_GALACTICA_ABI,
+    functionName: 'setApprovalForAll',
+    args: [tradeRelayAddress, true],
+    silent: false,
+  })
+}
+
+async function callMossContract({
+  address,
+  abi,
+  functionName,
+  args,
+  silent,
+}: {
+  address: Address
+  abi: unknown
+  functionName: string
+  args: unknown[]
+  silent: boolean
+}): Promise<Hash> {
+  await initialiseMossWallet()
+  const result = await mega.callContract({
+    address,
+    abi,
+    functionName,
+    args,
+    silent,
+    silentUIApproveFallback: silent,
+  })
+
+  return requireMossTransaction(result)
+}
+
+async function getBrowserClients(preferredAccount?: Address): Promise<BrowserClients> {
+  const provider = getEthereumProvider()
+  const transport = custom(provider)
+  const account = preferredAccount ?? (await requestWalletAccount())
+
+  return {
+    account,
+    walletClient: createWalletClient({ transport }),
+  }
+}
+
+async function requestWalletAccount(): Promise<Address> {
+  const accounts = await getEthereumProvider().request({ method: 'eth_requestAccounts' })
+  const firstAccount = Array.isArray(accounts) ? toAddress(String(accounts[0] ?? '')) : null
+  if (!firstAccount) {
+    throw new Error('No wallet account was returned.')
+  }
+  return firstAccount
+}
+
+function getEthereumProvider(): EthereumProvider {
+  if (!window.ethereum) {
+    throw new Error('No injected wallet found. Install or unlock a browser wallet first.')
+  }
+  return window.ethereum
+}
+
+function requireIdleGalacticaAddress(): Address {
+  const address = getIdleGalacticaAddress()
+  if (!address) throw new Error('VITE_IDLE_GALACTICA_ADDRESS is not configured.')
+  return address
+}
+
+function requireTradeRelayAddress(): Address {
+  const address = getTradeRelayAddress()
+  if (!address) throw new Error('VITE_TRADE_RELAY_ADDRESS is not configured.')
+  return address
+}
+
+function createMossGameplayPermission(): Permission {
+  const address = requireIdleGalacticaAddress()
+
+  return {
+    expiry: Math.floor(Date.now() / 1000) + MOSS_GAMEPLAY_SESSION_SECONDS,
+    permissions: {
+      calls: MOSS_GAMEPLAY_CALLS.map((signature) => ({
+        to: address,
+        signature,
+      })),
+      spend: [],
+    },
+  }
+}
+
+function requireMossTransaction(result: TransactionResult): Hash {
+  if (result.status !== 'approved') {
+    throw new Error(result.error || 'MOSS transaction was not approved.')
   }
 
-  return address
+  const hash = result.receipt?.hash ?? result.receipts?.[0]?.hash
+  if (!hash) {
+    throw new Error('MOSS transaction completed without a receipt hash.')
+  }
+
+  return hash
+}
+
+function readAddress(key: string): Address | null {
+  const value = import.meta.env[key]
+  return toAddress(value)
+}
+
+export function toAddress(value: string | undefined): Address | null {
+  return typeof value === 'string' && isAddress(value) ? value : null
+}
+
+function sectorFromChainId(chainId: number): SectorId {
+  return SECTOR_BY_CHAIN_ID.get(chainId) ?? 'orbitalDock'
+}
+
+function itemFromChainId(chainId: bigint): ItemId | null {
+  if (chainId === 0n) return null
+  return ITEM_BY_CHAIN_ID.get(chainId) ?? null
+}
+
+function tupleField<T>(value: unknown, key: string, index: number): T {
+  const record = value as Record<string, T>
+  const list = value as T[]
+  return record[key] ?? list[index]
+}
+
+function rangeBigInt(startInclusive: bigint, endExclusive: bigint): bigint[] {
+  const values: bigint[] = []
+  for (let current = startInclusive; current < endExclusive; current += 1n) {
+    values.push(current)
+  }
+  return values
+}
+
+function safeNumber(value: bigint): number {
+  return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value)
 }

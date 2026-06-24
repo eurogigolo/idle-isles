@@ -10,6 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "start": "node scripts/serve-dist.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "audit": "npm audit",
@@ -23,6 +24,7 @@
     "deploy:megaeth": "hardhat --network megaethTestnet --build-profile production run scripts/deploy.ts"
   },
   "dependencies": {
+    "@megaeth-labs/wallet-sdk": "^0.1.22",
     "@openzeppelin/contracts": "^5.6.1",
     "lucide-react": "^1.17.0",
     "react": "^19.2.6",

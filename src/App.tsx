@@ -1,460 +1,134 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Axe,
+  Activity,
+  Box,
   CircleDollarSign,
-  Clock,
-  Coins,
-  Fish,
-  Flame,
-  Gem,
-  Hammer,
-  Heart,
+  Compass,
+  Copy,
+  Crosshair,
+  Factory,
+  Gauge,
   Landmark,
-  MapPinned,
   Package,
-  Pickaxe,
-  Plus,
+  Play,
+  Rocket,
   Shield,
-  Ship,
-  ShipWheel,
   ShoppingCart,
   Sparkles,
-  Swords,
-  TreePine,
+  Square,
   Wallet,
-  X,
+  Wrench,
+  Zap,
 } from 'lucide-react'
-import type { LucideIcon } from 'lucide-react'
-import type { Address } from 'viem'
+import { useEffect, useMemo, useState } from 'react'
+import './App.css'
+import { GameScene } from './GameScene'
+import type { Address } from './chain'
 import {
   ACTIVITIES,
-  ACTIVITY_BY_ID,
-  AFK_CAP_MS,
-  AREAS,
-  AREA_BY_ID,
-  EQUIPMENT_SLOTS,
-  type ActivityDefinition,
-  type ActivityGroup,
-  type ActivityId,
-  type AreaId,
-  type ClaimPreview,
-  type GameState,
-  type ItemId,
   ITEMS,
-  LEGACY_STORAGE_KEYS,
-  MARKET_CATEGORIES,
-  type MarketCategory,
-  MARKET_ROWS,
-  MARKET_ITEMS,
-  normalizeState,
+  MODULE_SLOTS,
+  SECTORS,
   SKILLS,
-  type SkillId,
   STORAGE_KEY,
   applyClaim,
+  buyRelayItem,
   createInitialState,
-  eatFood,
-  formatDuration,
-  getMarketCategory,
-  getActivityLock,
-  getActivityLocks,
-  getBurnChance,
+  equipModule,
+  formatItemQuantity,
+  formatModuleSlot,
+  getActivityById,
+  getActivityStatus,
+  getCargoEntries,
   getClaimPreview,
-  getEquipmentStats,
-  getFoodItems,
-  getActivityAreaId,
-  getItemSources,
-  getItemUses,
-  getMaxHitpoints,
-  isAreaUnlocked,
-  levelFromXp,
-  skillProgress,
-  summarizePreview,
-  travelToArea,
+  getSectorById,
+  getSectorUnlockStatus,
+  getSkillLevel,
+  getSkillName,
+  getXpForNextLevel,
+  sellCargoItem,
+  startActivity,
+  stopActivity,
+  travelToSector,
+  unequipModule,
+  updateCombatSettings,
+  useRepairSupply as applyRepairSupply,
+  type ActivityDefinition,
+  type ActivityGroup,
+  type CombatSettings,
+  type GameState,
+  type ItemId,
+  type ModuleStats,
+  type ModuleSlot,
+  type SectorId,
+  type SkillId,
 } from './game'
-import {
-  CHAIN_SETTLE_CYCLE_LIMIT,
-  MEGAETH_CHAIN_ID_HEX,
-  MEGAETH_TESTNET_PARAMS,
-  type BrowserEthereumProvider,
-  type ChainSnapshot,
-  getContractActivity,
-  getChainOrderId,
-  getIdleIslesAddress,
-  readChainSnapshot,
-  toAddress,
-  writeBuyOrder,
-  writeCancelOrder,
-  writeClaim,
-  writeClearCombatSafety,
-  writeConfigureCombatSafety,
-  writeCreateOrder,
-  writeCreateProfile,
-  writeEatFood,
-  writeEquip,
-  writeStartActivity,
-  writeTravelToArea,
-  writeUnequip,
-} from './chain'
-import './App.css'
 
-declare global {
-  interface Window {
-    ethereum?: BrowserEthereumProvider
-  }
+const GROUPS: ActivityGroup[] = ['Gathering', 'Production', 'Combat']
+type MissionSkillFilter = SkillId | 'all'
+type WalletMode = 'injected' | 'moss'
+type ChainModule = typeof import('./chain')
+
+let chainModulePromise: Promise<ChainModule> | null = null
+
+function loadChain(): Promise<ChainModule> {
+  chainModulePromise ??= import('./chain')
+  return chainModulePromise
 }
 
-const SKILL_ICONS: Record<SkillId, LucideIcon> = {
-  attack: Swords,
-  defence: Shield,
-  hitpoints: Heart,
-  woodcutting: Axe,
-  fishing: Fish,
-  mining: Pickaxe,
-  smithing: Hammer,
-  cooking: Flame,
-  crafting: Package,
+function isChainModeConfigured(): boolean {
+  return Boolean(readEnvAddress('VITE_IDLE_GALACTICA_ADDRESS') && readEnvAddress('VITE_TRADE_RELAY_ADDRESS'))
 }
 
-const ITEM_ICONS: Record<ItemId, LucideIcon> = {
-  crowns: Coins,
-  ashLog: TreePine,
-  pineLog: TreePine,
-  oakLog: TreePine,
-  ironbarkLog: TreePine,
-  elderLog: TreePine,
-  spiritwoodLog: TreePine,
-  rawMinnow: Fish,
-  cookedMinnow: Fish,
-  rawTrout: Fish,
-  cookedTrout: Fish,
-  rawCod: Fish,
-  cookedCod: Fish,
-  rawTuna: Fish,
-  cookedTuna: Fish,
-  rawManta: Fish,
-  cookedManta: Fish,
-  rawLeviathan: Fish,
-  cookedLeviathan: Fish,
-  treantBark: TreePine,
-  hollowSeed: Sparkles,
-  copperOre: Pickaxe,
-  tinOre: Pickaxe,
-  ironOre: Pickaxe,
-  coalOre: Pickaxe,
-  cobaltOre: Pickaxe,
-  tungstenOre: Pickaxe,
-  bronzeBar: Hammer,
-  ironBar: Hammer,
-  steelBar: Hammer,
-  tungstenBar: Hammer,
-  woodClub: Swords,
-  barkShield: Shield,
-  barkVest: Shield,
-  barkLeggings: Shield,
-  copperDagger: Swords,
-  copperHelm: Shield,
-  copperPlate: Shield,
-  copperLegs: Shield,
-  ironSword: Swords,
-  ironHelm: Shield,
-  ironPlate: Shield,
-  ironLegs: Shield,
-  steelLongsword: Swords,
-  steelHelm: Shield,
-  steelPlate: Shield,
-  steelLegs: Shield,
-  tungstenBlade: Swords,
-  tungstenHelm: Shield,
-  tungstenPlate: Shield,
-  tungstenLegs: Shield,
-  tannedHide: Package,
-  thickHide: Package,
-  ruggedHide: Package,
-  cobaltScale: Gem,
-  wyrmHide: Package,
-  leatherCowl: Shield,
-  leatherBody: Shield,
-  leatherChaps: Shield,
-  hardleatherCowl: Shield,
-  hardleatherBody: Shield,
-  hardleatherChaps: Shield,
-  carapaceCowl: Shield,
-  carapaceBody: Shield,
-  carapaceLegs: Shield,
-  cobaltMeshCowl: Shield,
-  cobaltMeshBody: Shield,
-  cobaltMeshLegs: Shield,
-  dragonhideCowl: Shield,
-  dragonhideBody: Shield,
-  dragonhideChaps: Shield,
-  fieldCharm: Sparkles,
-  runeDust: Gem,
+function readEnvAddress(key: string): Address | null {
+  const value = import.meta.env[key]
+  return typeof value === 'string' && /^0x[a-fA-F0-9]{40}$/.test(value) ? (value as Address) : null
 }
 
-type ActivitySubtabGroup = Extract<ActivityGroup, 'Gather' | 'Artisan'>
-const RESOURCE_GROUPS: ActivitySubtabGroup[] = ['Gather', 'Artisan']
-const ACTIVITY_SUBTABS: Record<ActivitySubtabGroup, SkillId[]> = {
-  Gather: ['woodcutting', 'fishing', 'mining'],
-  Artisan: ['smithing', 'crafting', 'cooking'],
-}
-const SKILL_NAMES = Object.fromEntries(
-  SKILLS.map((skill) => [skill.id, skill.name]),
-) as Record<SkillId, string>
-const BOOT_TIME = Date.now()
-type PlayMode = 'local' | 'chain'
-const AFK_NOTIFICATION_MS = 5 * 60 * 1000
-const LAST_SEEN_STORAGE_KEY = 'idle-isles-last-seen-at'
-
-interface WelcomeBackReport {
-  activityName: string
-  awayMs: number
-  capped: boolean
-  lines: WelcomeBackLine[]
+const GROUP_ICONS: Record<ActivityGroup, typeof Activity> = {
+  Gathering: Compass,
+  Production: Factory,
+  Combat: Crosshair,
 }
 
-interface WelcomeBackLine {
-  tone: 'good' | 'warn' | 'danger' | 'neutral'
-  text: string
+const SKILL_ICONS: Record<SkillId, typeof Activity> = {
+  asteroidMining: Gauge,
+  wreckSalvage: Package,
+  nebulaSiphoning: Zap,
+  exoSurveying: Compass,
+  shipyardFabrication: Wrench,
+  lifeSystemsSynthesis: Activity,
+  quantumRefining: Factory,
+  nanofabAssembly: Box,
+  gunnery: Crosshair,
+  engineering: Shield,
 }
 
-function readSave(): GameState {
-  try {
-    const raw =
-      window.localStorage.getItem(STORAGE_KEY) ??
-      LEGACY_STORAGE_KEYS.map((key) => window.localStorage.getItem(key)).find(Boolean)
-    return raw ? normalizeState(JSON.parse(raw) as Partial<GameState>) : createInitialState()
-  } catch {
-    return createInitialState()
-  }
-}
-
-function readLastSeen(): number | null {
-  try {
-    const value = Number(window.localStorage.getItem(LAST_SEEN_STORAGE_KEY))
-    return Number.isFinite(value) && value > 0 ? value : null
-  } catch {
-    return null
-  }
-}
-
-function writeLastSeen(value = Date.now()) {
-  try {
-    window.localStorage.setItem(LAST_SEEN_STORAGE_KEY, String(value))
-  } catch {
-    // Ignore storage failures; offline rewards still work in memory.
-  }
-}
+const REPAIR_ITEMS = (Object.keys(ITEMS) as ItemId[]).filter(
+  (itemId) => ITEMS[itemId].kind === 'repair',
+)
 
 function App() {
-  const [game, setGame] = useState<GameState>(readSave)
-  const gameRef = useRef(game)
-  const [now, setNow] = useState(BOOT_TIME)
-  const [playMode, setPlayMode] = useState<PlayMode>('local')
-  const [welcomeBackReport, setWelcomeBackReport] = useState<WelcomeBackReport | null>(null)
-  const hiddenAtRef = useRef<number | null>(null)
-  const [selectedGroup, setSelectedGroup] = useState<ActivitySubtabGroup>('Gather')
-  const [selectedActivitySkill, setSelectedActivitySkill] = useState<
-    Record<ActivitySubtabGroup, SkillId>
-  >({
-    Gather: 'woodcutting',
-    Artisan: 'smithing',
+  const [game, setGame] = useState<GameState>(() => loadGame())
+  const [selectedGroup, setSelectedGroup] = useState<ActivityGroup>('Gathering')
+  const [selectedSkillFilters, setSelectedSkillFilters] = useState<Record<ActivityGroup, MissionSkillFilter>>({
+    Gathering: 'all',
+    Production: 'all',
+    Combat: 'all',
   })
-  const [account, setAccount] = useState<Address | null>(null)
-  const [chainId, setChainId] = useState<string | null>(null)
-  const [walletNote, setWalletNote] = useState('Local profile')
-  const [chainSnapshot, setChainSnapshot] = useState<ChainSnapshot | null>(null)
-  const [chainLoading, setChainLoading] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const [chainMode, setChainMode] = useState(false)
+  const [walletMode, setWalletMode] = useState<WalletMode>('moss')
+  const [chainAccount, setChainAccount] = useState<Address | null>(null)
+  const [chainHasProfile, setChainHasProfile] = useState(false)
   const [chainBusy, setChainBusy] = useState(false)
-  const [marketFilter, setMarketFilter] = useState<MarketCategory>('All')
-  const [selectedMarketItem, setSelectedMarketItem] = useState<ItemId | null>(null)
-  const [listingItem, setListingItem] = useState<ItemId | ''>('')
-  const [listingQuantity, setListingQuantity] = useState('1')
-  const [listingPrice, setListingPrice] = useState('')
-
-  const isChainMode = playMode === 'chain'
-  const chainAddress = getIdleIslesAddress()
-  const displayGame = useMemo(
-    () => (isChainMode && chainSnapshot ? gameFromChainSnapshot(chainSnapshot, game) : game),
-    [chainSnapshot, game, isChainMode],
+  const [mossReady, setMossReady] = useState(false)
+  const [mossSessionReady, setMossSessionReady] = useState(false)
+  const [notice, setNotice] = useState(() =>
+    isChainModeConfigured()
+      ? 'Local v2 simulation active. Chain mode is available.'
+      : 'Local v2 simulation active. Configure v2 contract addresses to enable Chain mode.',
   )
-  const activeActivity = displayGame.active ? ACTIVITY_BY_ID[displayGame.active.id] : null
-  const currentArea = AREA_BY_ID[displayGame.currentAreaId]
-  const activitySubtabs = ACTIVITY_SUBTABS[selectedGroup]
-  const selectedActivitySubtab = selectedActivitySkill[selectedGroup]
-  const activityListLabel = SKILL_NAMES[selectedActivitySubtab]
-  const chainProfileLock =
-    isChainMode && !chainSnapshot?.hasProfile ? 'Create profile first' : null
-  const localPreview = useMemo(() => getClaimPreview(game, now), [game, now])
-  const preview = useMemo(
-    () =>
-      isChainMode && chainSnapshot
-        ? getChainPreview(chainSnapshot, activeActivity, now)
-        : localPreview,
-    [activeActivity, chainSnapshot, isChainMode, localPreview, now],
-  )
-  const totalReadyCycles =
-    isChainMode && chainSnapshot
-      ? getChainReadyCycles(chainSnapshot, activeActivity, now)
-      : preview.cycles
-  const visibleResourceActivities = ACTIVITIES.filter(
-    (activity) =>
-      getActivityAreaId(activity) === displayGame.currentAreaId &&
-      activity.group === selectedGroup &&
-      (!selectedActivitySubtab || activity.primarySkill === selectedActivitySubtab),
-  )
-  const visibleCombatActivities = ACTIVITIES.filter(
-    (activity) =>
-      getActivityAreaId(activity) === displayGame.currentAreaId && activity.group === 'Combat',
-  )
-  const visibleInventoryItems = (Object.keys(ITEMS) as ItemId[]).filter(
-    (itemId) => itemId !== 'crowns' && displayGame.inventory[itemId] > 0,
-  )
-  const listableItems = useMemo(
-    () =>
-      MARKET_ITEMS.filter(
-        (itemId) =>
-          itemId !== 'crowns' && getListableItemCount(displayGame, itemId, isChainMode) > 0,
-      ),
-    [displayGame, isChainMode],
-  )
-  const visibleMarketOrders = useMemo(
-    () =>
-      displayGame.marketOrders
-        .filter(
-          (order) =>
-            marketFilter === 'All' || getMarketCategory(order.itemId) === marketFilter,
-        )
-        .sort((a, b) => {
-          if (a.seller !== b.seller) {
-            return a.seller === 'Player' ? -1 : 1
-          }
-
-          return a.unitPrice - b.unitPrice
-        }),
-    [displayGame.marketOrders, marketFilter],
-  )
-  const selectedListingItem =
-    listingItem && listableItems.includes(listingItem) ? listingItem : (listableItems[0] ?? '')
-  const detailItem = selectedMarketItem ?? visibleMarketOrders[0]?.itemId ?? null
-  const equipmentStats = getEquipmentStats(displayGame)
-  const maxHitpoints = isChainMode && chainSnapshot ? chainSnapshot.maxHitpoints : getMaxHitpoints(displayGame)
-  const hitpointPct = maxHitpoints > 0 ? (displayGame.currentHitpoints / maxHitpoints) * 100 : 0
-  const totalLevel = SKILLS.reduce(
-    (sum, skill) => sum + levelFromXp(displayGame.skills[skill.id].xp),
-    0,
-  )
-  const foodItems = getFoodItems()
-  const chainStatus = getChainStatus({
-    account,
-    chainAddress,
-    chainId,
-    chainLoading,
-    chainSnapshot,
-    isChainMode,
-  })
-
-  useEffect(() => {
-    gameRef.current = game
-  }, [game])
-
-  useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
-  }, [game])
-
-  const resolveWelcomeBack = useCallback(
-    (awayMs: number, returnedAt = Date.now()) => {
-      if (awayMs < AFK_NOTIFICATION_MS) {
-        return
-      }
-
-      if (isChainMode) {
-        const report = createChainWelcomeBackReport(chainSnapshot, returnedAt, awayMs)
-        if (report) {
-          setWelcomeBackReport(report)
-        }
-        return
-      }
-
-      const current = gameRef.current
-      if (!current.active) {
-        return
-      }
-
-      const result = applyClaim(current, returnedAt)
-      const report = createWelcomeBackReport(current, result.state, result.preview, awayMs)
-      if (!report) {
-        return
-      }
-
-      const summary = summarizePreview(result.preview) || 'No completed cycles were ready'
-      const nextState = {
-        ...result.state,
-        log: [`Welcome back: ${summary}.`, ...result.state.log].slice(0, 8),
-      }
-      gameRef.current = nextState
-      setGame(nextState)
-      setWelcomeBackReport(report)
-    },
-    [chainSnapshot, isChainMode],
-  )
-
-  useEffect(() => {
-    const bootCheck = window.setTimeout(() => {
-      const savedLastSeen = readLastSeen()
-      if (savedLastSeen) {
-        resolveWelcomeBack(BOOT_TIME - savedLastSeen, BOOT_TIME)
-      }
-    }, 0)
-    writeLastSeen(BOOT_TIME)
-
-    const markAway = () => {
-      if (hiddenAtRef.current === null) {
-        hiddenAtRef.current = Date.now()
-      }
-      writeLastSeen(hiddenAtRef.current)
-    }
-
-    const markReturn = () => {
-      const returnedAt = Date.now()
-      const awayStartedAt = hiddenAtRef.current ?? readLastSeen()
-      hiddenAtRef.current = null
-
-      if (awayStartedAt) {
-        resolveWelcomeBack(returnedAt - awayStartedAt, returnedAt)
-      }
-      writeLastSeen(returnedAt)
-    }
-
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        markAway()
-      } else {
-        markReturn()
-      }
-    }
-
-    const heartbeat = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        writeLastSeen()
-      }
-    }, 30_000)
-
-    document.addEventListener('visibilitychange', handleVisibility)
-    window.addEventListener('blur', markAway)
-    window.addEventListener('focus', markReturn)
-    window.addEventListener('pagehide', markAway)
-    window.addEventListener('beforeunload', markAway)
-
-    return () => {
-      window.clearTimeout(bootCheck)
-      window.clearInterval(heartbeat)
-      document.removeEventListener('visibilitychange', handleVisibility)
-      window.removeEventListener('blur', markAway)
-      window.removeEventListener('focus', markReturn)
-      window.removeEventListener('pagehide', markAway)
-      window.removeEventListener('beforeunload', markAway)
-    }
-  }, [resolveWelcomeBack])
+  const chainReady = isChainModeConfigured()
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -462,727 +136,565 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!window.ethereum?.on) {
-      return
+    if (!chainMode) {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(game))
     }
-
-    const handleAccounts = (accounts: unknown) => {
-      const next = Array.isArray(accounts) ? toAddress(String(accounts[0] ?? '')) : null
-      setAccount(next)
-    }
-
-    const handleChain = (nextChainId: unknown) => {
-      setChainId(typeof nextChainId === 'string' ? nextChainId : null)
-    }
-
-    window.ethereum.on('accountsChanged', handleAccounts)
-    window.ethereum.on('chainChanged', handleChain)
-
-    return () => {
-      window.ethereum?.removeListener?.('accountsChanged', handleAccounts)
-      window.ethereum?.removeListener?.('chainChanged', handleChain)
-    }
-  }, [])
+  }, [chainMode, game])
 
   useEffect(() => {
-    if (!isChainMode) {
-      return
-    }
+    if (walletMode !== 'moss') return
 
     let cancelled = false
 
-    async function loadChainState() {
-      if (!account) {
-        setChainSnapshot(null)
-        setWalletNote('Connect wallet for chain profile')
-        return
-      }
-
-      if (!chainAddress) {
-        setChainSnapshot(null)
-        setWalletNote('Set VITE_IDLE_ISLES_ADDRESS')
-        return
-      }
-
-      setChainLoading(true)
-
+    async function prepareMoss() {
       try {
-        const snapshot = await readChainSnapshot(account)
-        if (!cancelled) {
-          setChainSnapshot(snapshot)
-          setWalletNote(snapshot.hasProfile ? 'Onchain profile' : 'Create onchain profile')
+        const chain = await loadChain()
+        await chain.initialiseMossWallet()
+        const status = await chain.getMossWalletStatus()
+        if (cancelled) return
+
+        setMossReady(true)
+        if (status.status === 'connected') {
+          const address = chain.toAddress(status.address)
+          setChainAccount(address)
+          setMossSessionReady(address ? await chain.hasMossGameplaySession(address) : false)
+        } else {
+          setMossSessionReady(false)
         }
       } catch (error) {
         if (!cancelled) {
-          setChainSnapshot(null)
-          setWalletNote(formatChainError(error))
-        }
-      } finally {
-        if (!cancelled) {
-          setChainLoading(false)
+          setMossReady(false)
+          setMossSessionReady(false)
+          setNotice(error instanceof Error ? error.message : 'MOSS wallet failed to initialize.')
         }
       }
     }
 
-    void loadChainState()
+    void prepareMoss()
 
     return () => {
       cancelled = true
     }
-  }, [account, chainAddress, isChainMode])
+  }, [walletMode])
 
-  function pushLog(message: string, source = game) {
-    return {
-      ...source,
-      log: [message, ...source.log].slice(0, 8),
-    }
+  const activeActivity = game.activeMission ? getActivityById(game.activeMission.activityId) : null
+  const preview = useMemo(() => getClaimPreview(game, now), [game, now])
+  const sector = getSectorById(game.currentSectorId)
+  const selectedSkillFilter = selectedSkillFilters[selectedGroup]
+  const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
+  const groupActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
+  const visibleActivities = sortMissionActivities(
+    groupActivities.filter(
+      (activity) => selectedSkillFilter === 'all' || activityMatchesSkill(activity, selectedSkillFilter),
+    ),
+    selectedGroup,
+    selectedSkillFilter,
+  )
+  const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
+  const progressPct = getMissionProgress(activeActivity, game, now)
+
+  function setMissionSkillFilter(filter: MissionSkillFilter) {
+    setSelectedSkillFilters((current) => ({
+      ...current,
+      [selectedGroup]: filter,
+    }))
   }
 
-  function pushChainLog(message: string) {
-    setGame((current) => pushLog(message, current))
-  }
-
-  async function refreshChainState() {
-    if (!account) {
-      setWalletNote('Connect wallet for chain profile')
-      return
-    }
-
-    if (!chainAddress) {
-      setWalletNote('Set VITE_IDLE_ISLES_ADDRESS')
-      return
-    }
-
-    setChainLoading(true)
-
+  function runAction(action: () => GameState, success?: string) {
     try {
-      const snapshot = await readChainSnapshot(account)
-      setChainSnapshot(snapshot)
-      setWalletNote(snapshot.hasProfile ? 'Onchain profile refreshed' : 'Create onchain profile')
+      setGame(action())
+      if (success) setNotice(success)
     } catch (error) {
-      setWalletNote(formatChainError(error))
-    } finally {
-      setChainLoading(false)
+      setNotice(error instanceof Error ? error.message : 'Action failed.')
     }
   }
 
-  async function runChainTransaction(
-    action: (provider: BrowserEthereumProvider, account: Address) => Promise<unknown>,
-    successMessage: string,
-    options: { requiresProfile?: boolean } = {},
-  ) {
-    if (!window.ethereum) {
-      setWalletNote('No injected wallet')
+  async function handleChainToggle() {
+    if (chainMode) {
+      setChainMode(false)
+      setChainHasProfile(false)
+      setMossSessionReady(false)
+      setGame(loadGame())
+      setNotice('Local v2 simulation active.')
       return
     }
 
-    if (!account) {
-      setWalletNote('Connect wallet for chain mode')
+    if (!chainReady) {
+      setNotice('Set VITE_IDLE_GALACTICA_ADDRESS and VITE_TRADE_RELAY_ADDRESS before using Chain mode.')
       return
     }
 
-    if (!chainAddress) {
-      setWalletNote('Set VITE_IDLE_ISLES_ADDRESS')
-      return
-    }
+    await connectAndSync()
+  }
 
-    if (chainId !== MEGAETH_CHAIN_ID_HEX) {
-      setWalletNote('Switch wallet to MegaETH')
-      return
-    }
+  function selectWalletMode(nextMode: WalletMode) {
+    if (nextMode === walletMode) return
 
-    if ((options.requiresProfile ?? true) && !chainSnapshot?.hasProfile) {
-      const message = 'Create onchain profile first.'
-      setWalletNote(message)
-      pushChainLog(message)
-      return
+    setWalletMode(nextMode)
+    setChainAccount(null)
+    setChainHasProfile(false)
+    setMossSessionReady(false)
+    if (nextMode === 'injected') {
+      setMossReady(false)
     }
+    setNotice(nextMode === 'moss' ? 'MOSS selected.' : 'MetaMask selected.')
+  }
 
+  async function connectAndSync() {
+    if (chainBusy) return
     setChainBusy(true)
-    setWalletNote('Confirm transaction')
-
     try {
-      await action(window.ethereum, account)
-      setWalletNote(successMessage)
-      pushChainLog(successMessage)
-      await refreshChainState()
+      const account = await connectSelectedWallet()
+      setChainAccount(account)
+      setChainMode(true)
+      await syncChain(account, 'Chain mode synced.')
     } catch (error) {
-      const message = formatChainError(error)
-      setWalletNote(message)
-      pushChainLog(message)
+      setNotice(error instanceof Error ? error.message : 'Wallet connection failed.')
     } finally {
       setChainBusy(false)
     }
   }
 
-  useEffect(() => {
-    if (isChainMode) {
-      return
+  async function connectSelectedWallet(): Promise<Address> {
+    const chain = await loadChain()
+    if (walletMode === 'moss') {
+      const account = await chain.connectMossWallet()
+      if (!account) throw new Error('MOSS connection cancelled.')
+      setMossReady(true)
+      setMossSessionReady(await chain.hasMossGameplaySession(account))
+      return account
     }
 
-    const timer = window.setInterval(() => {
-      setGame((current) => {
-        if (!current.active || !ACTIVITY_BY_ID[current.active.id].combat) {
-          return current
-        }
-
-        const result = applyClaim(current, Date.now())
-
-        if (
-          result.preview.cycles === 0 &&
-          !result.preview.stoppedByHp &&
-          !result.preview.stoppedBySafety
-        ) {
-          return current
-        }
-
-        return {
-          ...result.state,
-          log: [`Combat resolved ${summarizePreview(result.preview)}.`, ...result.state.log].slice(
-            0,
-            8,
-          ),
-        }
-      })
-    }, 1000)
-
-    return () => window.clearInterval(timer)
-  }, [isChainMode])
-
-  async function createChainProfile() {
-    await runChainTransaction(writeCreateProfile, 'Profile created onchain.', {
-      requiresProfile: false,
-    })
+    return chain.connectWallet()
   }
 
-  async function claim() {
-    if (isChainMode) {
-      await runChainTransaction(writeClaim, 'Claim confirmed onchain.')
+  async function syncChain(account = chainAccount, success = 'Chain state synced.') {
+    if (!account) {
+      await connectAndSync()
       return
     }
 
-    setGame((current) => {
-      const result = applyClaim(current, Date.now())
-      if (result.preview.cycles === 0) {
-        if (result.preview.stoppedByHp || result.preview.stoppedBySafety) {
-          return pushLog(`Combat resolved ${summarizePreview(result.preview)}.`, result.state)
-        }
-
-        return pushLog('No completed cycles yet.', current)
-      }
-
-      return pushLog(`Claimed ${summarizePreview(result.preview)}.`, result.state)
-    })
-  }
-
-  function updateCombatSettings(settings: Partial<GameState['combatSettings']>) {
-    setGame((current) => ({
-      ...current,
-      combatSettings: {
-        ...current.combatSettings,
-        ...settings,
-      },
-    }))
-  }
-
-  async function saveChainCombatSafety() {
-    const settings = displayGame.combatSettings
-
-    if (settings.autoEat && !settings.foodItemId) {
-      const message = 'Select food for onchain auto-eat.'
-      setWalletNote(message)
-      pushChainLog(message)
-      return
-    }
-
-    if (!settings.autoEat) {
-      await runChainTransaction(
-        (provider, activeAccount) => writeClearCombatSafety(provider, activeAccount),
-        'Auto-eat disabled. Combat can now continue past Stop HP.',
-      )
-      return
-    }
-
-    await runChainTransaction(
-      (provider, activeAccount) =>
-        writeConfigureCombatSafety(provider, activeAccount, {
-          autoEat: settings.autoEat,
-          stopAtHitpoints: Math.max(
-            1,
-            Math.min(settings.stopAtHitpoints, Math.max(1, maxHitpoints - 1)),
-          ),
-          foodItemId: settings.foodItemId,
-          maxFoodPerSettle: settings.maxFoodPerClaim,
-        }),
-      'Chain safety saved.',
+    const chain = await loadChain()
+    const snapshot = await chain.readChainSnapshot(account)
+    setGame(snapshot.game)
+    setChainHasProfile(snapshot.hasProfile)
+    setNotice(
+      snapshot.hasProfile
+        ? `${success} Block ${snapshot.blockNumber.toString()}.`
+        : 'No on-chain profile found. Create a ship profile to begin.',
     )
   }
 
-  async function startActivity(activityId: ActivityId) {
-    if (isChainMode) {
-      const activity = ACTIVITY_BY_ID[activityId]
-
-      if (!chainSnapshot?.hasProfile) {
-        const message = 'Create onchain profile first.'
-        setWalletNote(message)
-        pushChainLog(message)
-        return
-      }
-
-      if (!getContractActivity(activityId)) {
-        pushChainLog(`${activity.name} is local-only until more contract content is ported.`)
-        return
-      }
-
-      await runChainTransaction(
-        (provider, activeAccount) => writeStartActivity(provider, activeAccount, activityId),
-        `Started ${activity.name} onchain.`,
-      )
+  async function runChainAction(action: (account: Address) => Promise<unknown>, success: string) {
+    if (chainBusy) return
+    if (!chainReady) {
+      setNotice('Chain mode is not configured.')
       return
     }
 
-    setGame((current) => {
-      const result = applyClaim(current, Date.now())
-      const activity = ACTIVITY_BY_ID[activityId]
-      const lock = getActivityLock(activity, result.state)
-
-      if (lock) {
-        return pushLog(`${activity.name} requires ${lock}.`, result.state)
+    let account = chainAccount
+    setChainBusy(true)
+    try {
+      if (!account) {
+        account = await connectSelectedWallet()
+        setChainAccount(account)
       }
+      await action(account)
+      if (walletMode === 'moss') {
+        const chain = await loadChain()
+        setMossSessionReady(await chain.hasMossGameplaySession(account))
+      }
+      await syncChain(account, success)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Chain transaction failed.')
+    } finally {
+      setChainBusy(false)
+    }
+  }
 
-      const next = {
-        ...result.state,
-        active: {
-          id: activityId,
-          startedAt: Date.now(),
-          lastClaimAt: Date.now(),
+  function requireChainProfile(): boolean {
+    if (!chainMode || chainHasProfile) return true
+    setNotice('Create an on-chain ship profile first.')
+    return false
+  }
+
+  function handleMissionStart(activity: ActivityDefinition) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossStartMission(activity.id)
+            : chain.writeStartMission(activity.id)
         },
-      }
-
-      return pushLog(`Started ${activity.name}.`, next)
-    })
-  }
-
-  async function equip(itemId: ItemId) {
-    const item = ITEMS[itemId]
-
-    if (!item.slot) {
-      return
-    }
-
-    if (isChainMode) {
-      await runChainTransaction(
-        (provider, activeAccount) => writeEquip(provider, activeAccount, itemId),
-        `Equipped ${item.name} onchain.`,
+        game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
       )
       return
     }
 
-    const slot = item.slot
+    runAction(
+      () => startActivity(game, activity.id),
+      game.activeMission ? 'Pending cycles settled. Mission switched.' : 'Mission started.',
+    )
+  }
 
-    setGame((current) => {
-      if (current.inventory[itemId] <= 0) {
-        return pushLog(`${item.name} is not in inventory.`, current)
-      }
-
-      const currentItem = current.equipment[slot]
-      const nextItem = currentItem === itemId ? null : itemId
-
-      return pushLog(nextItem ? `Equipped ${item.name}.` : `Unequipped ${item.name}.`, {
-        ...current,
-        equipment: {
-          ...current.equipment,
-          [slot]: nextItem,
+  function handleClaimMission() {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossClaimMission() : chain.writeClaimMission()
         },
-      })
-    })
-  }
-
-  async function unequip(slot: (typeof EQUIPMENT_SLOTS)[number]) {
-    const slotIndex = EQUIPMENT_SLOTS.indexOf(slot)
-    const itemId = displayGame.equipment[slot]
-
-    if (!itemId) {
-      return
-    }
-
-    if (isChainMode) {
-      await runChainTransaction(
-        (provider, activeAccount) => writeUnequip(provider, activeAccount, slotIndex),
-        `Unequipped ${ITEMS[itemId].name} onchain.`,
+        'Mission cycles claimed.',
       )
       return
     }
 
-    await equip(itemId)
+    runAction(() => applyClaim(game), 'Mission cycles claimed.')
   }
 
-  async function createListing() {
-    const itemId = selectedListingItem
-    if (!itemId) {
-      setGame((current) => pushLog('No listable items in inventory.', current))
-      return
-    }
-
-    const requestedQuantity = Math.max(1, Math.floor(Number(listingQuantity) || 1))
-    const unitPrice = Math.max(1, Math.floor(Number(listingPrice) || ITEMS[itemId].marketPrice))
-
-    if (isChainMode) {
-      const available = getListableItemCount(displayGame, itemId, true)
-      const quantity = Math.min(requestedQuantity, available)
-
-      if (quantity <= 0) {
-        pushChainLog(`No available ${ITEMS[itemId].name} to list.`)
-        return
-      }
-
-      await runChainTransaction(
-        (provider, activeAccount) =>
-          writeCreateOrder(provider, activeAccount, itemId, quantity, unitPrice),
-        `Listed ${quantity} ${ITEMS[itemId].name} onchain.`,
-      )
-      return
-    }
-
-    setGame((current) => {
-      const available = getAvailableItemCount(current, itemId)
-
-      if (available <= 0) {
-        return pushLog(`No available ${ITEMS[itemId].name} to list.`, current)
-      }
-
-      const quantity = Math.min(requestedQuantity, available)
-      const item = ITEMS[itemId]
-
-      return pushLog(`Listed ${quantity} ${item.name} at ${unitPrice} Crowns each.`, {
-        ...current,
-        inventory: {
-          ...current.inventory,
-          [itemId]: current.inventory[itemId] - quantity,
+  function handleStopMission() {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossStopMission() : chain.writeStopMission()
         },
-        marketOrders: [
-          {
-            id: `player-${Date.now()}-${itemId}`,
-            itemId,
-            seller: 'Player',
-            side: 'sell',
-            quantity,
-            unitPrice,
-            createdAt: Date.now(),
-          },
-          ...current.marketOrders,
-        ],
-      })
-    })
-  }
-
-  async function buyOrder(orderId: string) {
-    if (isChainMode) {
-      const chainOrderId = getChainOrderId(orderId)
-      const order = displayGame.marketOrders.find((entry) => entry.id === orderId)
-
-      if (!chainOrderId || !order || order.seller === 'Player') {
-        pushChainLog('That order cannot be bought.')
-        return
-      }
-
-      await runChainTransaction(
-        (provider, activeAccount) => writeBuyOrder(provider, activeAccount, chainOrderId),
-        `Bought 1 ${ITEMS[order.itemId].name} onchain.`,
+        'Mission stopped.',
       )
       return
     }
 
-    setGame((current) => {
-      const order = current.marketOrders.find((entry) => entry.id === orderId)
+    runAction(() => stopActivity(game))
+  }
 
-      if (!order) {
-        return pushLog('That order is no longer available.', current)
-      }
-
-      if (order.side === 'buy') {
-        if (current.inventory[order.itemId] <= 0) {
-          return pushLog(`No ${ITEMS[order.itemId].name} to sell.`, current)
-        }
-
-        return pushLog(
-          `Sold 1 ${ITEMS[order.itemId].name} to Realm Scavenger for ${order.unitPrice} Crowns.`,
-          {
-            ...current,
-            inventory: {
-              ...current.inventory,
-              crowns: current.inventory.crowns + order.unitPrice,
-              [order.itemId]: current.inventory[order.itemId] - 1,
-            },
-          },
-        )
-      }
-
-      if (order.seller === 'Player') {
-        return pushLog('Cancel your own listing to recover the escrowed items.', current)
-      }
-
-      if (current.inventory.crowns < order.unitPrice) {
-        return pushLog('Not enough crowns.', current)
-      }
-
-      const nextOrders =
-        order.quantity <= 1
-          ? current.marketOrders.filter((entry) => entry.id !== orderId)
-          : current.marketOrders.map((entry) =>
-              entry.id === orderId ? { ...entry, quantity: entry.quantity - 1 } : entry,
-            )
-
-      return pushLog(`Bought 1 ${ITEMS[order.itemId].name} for ${order.unitPrice} Crowns.`, {
-        ...current,
-        inventory: {
-          ...current.inventory,
-          crowns: current.inventory.crowns - order.unitPrice,
-          [order.itemId]: current.inventory[order.itemId] + 1,
+  function handleEquipModule(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossEquipModule(itemId) : chain.writeEquipModule(itemId)
         },
-        marketOrders: nextOrders,
-      })
-    })
-  }
-
-  async function cancelOrder(orderId: string) {
-    if (isChainMode) {
-      const chainOrderId = getChainOrderId(orderId)
-      const order = displayGame.marketOrders.find((entry) => entry.id === orderId)
-
-      if (!chainOrderId || !order || order.seller !== 'Player') {
-        pushChainLog('Only your listings can be cancelled.')
-        return
-      }
-
-      await runChainTransaction(
-        (provider, activeAccount) => writeCancelOrder(provider, activeAccount, chainOrderId),
-        `Cancelled ${ITEMS[order.itemId].name} listing onchain.`,
+        `${ITEMS[itemId].name} installed.`,
       )
       return
     }
 
-    setGame((current) => {
-      const order = current.marketOrders.find((entry) => entry.id === orderId)
+    runAction(() => equipModule(game, itemId))
+  }
 
-      if (!order || order.seller !== 'Player') {
-        return pushLog('Only your listings can be cancelled.', current)
-      }
-
-      return pushLog(`Cancelled ${order.quantity} ${ITEMS[order.itemId].name} listing.`, {
-        ...current,
-        inventory: {
-          ...current.inventory,
-          [order.itemId]: current.inventory[order.itemId] + order.quantity,
+  function handleUnequipModule(slot: ModuleSlot) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossUnequipModule(slot) : chain.writeUnequipModule(slot)
         },
-        marketOrders: current.marketOrders.filter((entry) => entry.id !== orderId),
-      })
-    })
-  }
-
-  async function handleInventoryItem(itemId: ItemId) {
-    const item = ITEMS[itemId]
-
-    if (item.slot) {
-      await equip(itemId)
-      return
-    }
-
-    if (!item.healAmount) {
-      return
-    }
-
-    if (isChainMode) {
-      await runChainTransaction(
-        (provider, activeAccount) => writeEatFood(provider, activeAccount, itemId),
-        `Ate ${item.name} onchain.`,
+        `${formatModuleSlot(slot)} module removed.`,
       )
       return
     }
 
-    setGame((current) => {
-      const result = eatFood(current, itemId)
-
-      if (result.reason) {
-        return pushLog(result.reason, current)
-      }
-
-      return pushLog(`Ate ${item.name} and restored ${result.healed} HP.`, result.state)
-    })
+    runAction(() => unequipModule(game, slot))
   }
 
-  async function connectWallet() {
-    if (!window.ethereum) {
-      setWalletNote('No injected wallet')
+  function handleRepairHull(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss' ? chain.writeMossRepairHull(itemId) : chain.writeRepairHull(itemId)
+        },
+        `${ITEMS[itemId].name} used.`,
+      )
+      return
+    }
+
+    runAction(() => applyRepairSupply(game, itemId))
+  }
+
+  function handleTravelToSector(sectorId: SectorId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossTravelToSector(sectorId)
+            : chain.writeTravelToSector(sectorId)
+        },
+        `Ship routed to ${getSectorById(sectorId).name}.`,
+      )
+      return
+    }
+
+    runAction(() => travelToSector(game, sectorId))
+  }
+
+  function handleBuyRelayItem(orderId: string) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async (account) => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossBuyTradeRelayOrder(account, orderId)
+            : chain.writeBuyTradeRelayOrder(orderId)
+        },
+        'Trade Relay order filled.',
+      )
+      return
+    }
+
+    runAction(() => buyRelayItem(game, orderId))
+  }
+
+  function handleSellCargoItem(itemId: ItemId) {
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      const unitPrice = Math.max(1, Math.floor(ITEMS[itemId].baseValue * 0.6))
+      void runChainAction(
+        async (account) => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossCreateTradeRelayOrder(account, itemId, unitPrice)
+            : chain.writeCreateTradeRelayOrder(itemId, unitPrice)
+        },
+        `${ITEMS[itemId].name} listed on the Trade Relay.`,
+      )
+      return
+    }
+
+    runAction(() => sellCargoItem(game, itemId))
+  }
+
+  function editCombatSettings(patch: Partial<CombatSettings>) {
+    setGame(updateCombatSettings(game, patch))
+  }
+
+  function commitCombatSettings(patch: Partial<CombatSettings>) {
+    const nextGame = updateCombatSettings(game, patch)
+    setGame(nextGame)
+
+    if (chainMode) {
+      if (!requireChainProfile()) return
+      void runChainAction(
+        async () => {
+          const chain = await loadChain()
+          return walletMode === 'moss'
+            ? chain.writeMossCombatSettings(nextGame.combatSettings)
+            : chain.writeCombatSettings(nextGame.combatSettings)
+        },
+        'Combat settings updated.',
+      )
+    }
+  }
+
+  async function enableMossGameplaySession() {
+    if (walletMode !== 'moss') {
+      setNotice('Select MOSS first.')
+      return
+    }
+    if (!chainAccount) {
+      setNotice('Connect MOSS first.')
+      return
+    }
+    if (chainBusy) return
+
+    setChainBusy(true)
+    try {
+      const chain = await loadChain()
+      await chain.grantMossGameplaySession()
+      setMossSessionReady(await chain.hasMossGameplaySession(chainAccount))
+      setNotice('MOSS gameplay session ready for 24 hours.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'MOSS gameplay session was not approved.')
+    } finally {
+      setChainBusy(false)
+    }
+  }
+
+  async function fundMossWallet() {
+    if (walletMode !== 'moss') {
+      setNotice('Select MOSS first.')
       return
     }
 
     try {
-      const accounts = (await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      })) as string[]
-      const nextChainId = (await window.ethereum.request({
-        method: 'eth_chainId',
-      })) as string
-
-      setAccount(toAddress(accounts[0]))
-      setChainId(nextChainId)
-      setWalletNote('Wallet linked')
-    } catch {
-      setWalletNote('Wallet rejected')
+      const chain = await loadChain()
+      await chain.openMossDeposit()
+      setNotice('MOSS funding screen opened.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to open MOSS funding.')
     }
   }
 
-  async function addMegaEth() {
-    if (!window.ethereum) {
-      setWalletNote('No injected wallet')
+  async function handleNetworkAction() {
+    if (walletMode === 'moss') {
+      setNotice('MOSS uses MegaETH Testnet.')
       return
     }
 
     try {
-      await window.ethereum.request({
-        method: 'wallet_addEthereumChain',
-        params: [MEGAETH_TESTNET_PARAMS],
-      })
-      setChainId(MEGAETH_CHAIN_ID_HEX)
-      setWalletNote('MegaETH selected')
-    } catch {
-      setWalletNote('Network request rejected')
+      const chain = await loadChain()
+      await chain.addMegaEthTestnet()
+      setNotice('MegaETH Testnet added or selected in wallet.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'Unable to add MegaETH Testnet.')
     }
   }
 
-  async function sailToArea(areaId: AreaId) {
-    if (isChainMode) {
-      const area = AREA_BY_ID[areaId]
-      const unlocked = isAreaUnlocked(displayGame, areaId)
-      const message = unlocked
-        ? `Sailed to ${area.name} onchain.`
-        : `Paid ${area.shipCost.toLocaleString()} Crowns and sailed to ${area.name} onchain.`
+  async function copyAccountAddress() {
+    if (!chainAccount) return
 
-      await runChainTransaction(
-        (provider, activeAccount) => writeTravelToArea(provider, activeAccount, areaId),
-        message,
-      )
-      return
+    try {
+      await navigator.clipboard.writeText(chainAccount)
+      setNotice('Wallet address copied.')
+    } catch {
+      setNotice(chainAccount)
     }
-
-    setGame((current) => {
-      const result = applyClaim(current, Date.now())
-      const voyage = travelToArea(result.state, areaId)
-      const claimText =
-        result.preview.cycles > 0
-          ? `Claimed ${summarizePreview(result.preview)} before sailing. `
-          : ''
-
-      return pushLog(`${claimText}${voyage.message}`, voyage.state)
-    })
   }
 
   return (
-    <main className="game-shell">
+    <main className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup">
-          <div className="sigil" aria-hidden="true">
-            <ShipWheel size={24} />
-          </div>
-          <div>
-            <h1>Idle Isles</h1>
-            <div className="subline">
-              <span>Total level {totalLevel}</span>
-              <span>{currentArea.name}</span>
-              <span>{activeActivity ? activeActivity.name : 'Camp idle'}</span>
-            </div>
-          </div>
+        <div>
+          <p className="eyebrow">On-chain space idle RPG</p>
+          <h1>Idle Galactica</h1>
         </div>
-
-        <div className="top-actions">
-          <div
-            className={`hp-pill ${displayGame.currentHitpoints <= maxHitpoints * 0.35 ? 'low' : ''}`}
-          >
-            <Heart size={17} />
-            <span>
-              {displayGame.currentHitpoints}/{maxHitpoints}
-            </span>
-            <i aria-hidden="true">
-              <b style={{ width: `${hitpointPct}%` }} />
-            </i>
-          </div>
-          <div className="currency-pill">
-            <Coins size={17} />
-            <span>{displayGame.inventory.crowns.toLocaleString()}</span>
-          </div>
-          <div className="mode-switch" aria-label="Play mode">
+        <div className="topbar-stats">
+          <StatPill icon={CircleDollarSign} label="Credits" value={game.cargo.credits.toLocaleString()} />
+          <StatPill icon={Rocket} label="Sector" value={sector.name} />
+          <StatPill
+            icon={Shield}
+            label="Hull"
+            value={`${Math.ceil(game.ship.currentHull)}/${game.ship.maxHull}`}
+          />
+        </div>
+        <div className="chain-controls">
+          <div className="wallet-mode-switch" aria-label="Wallet mode">
             <button
+              className={walletMode === 'injected' ? 'selected' : ''}
+              disabled={chainBusy}
+              onClick={() => selectWalletMode('injected')}
               type="button"
-              className={playMode === 'local' ? 'selected' : ''}
-              onClick={() => setPlayMode('local')}
             >
-              Local
+              MetaMask
             </button>
             <button
+              className={walletMode === 'moss' ? 'selected' : ''}
+              disabled={chainBusy}
+              onClick={() => selectWalletMode('moss')}
               type="button"
-              className={playMode === 'chain' ? 'selected' : ''}
-              onClick={() => setPlayMode('chain')}
             >
-              Chain
+              MOSS
             </button>
           </div>
-          <button type="button" className="icon-text-button" onClick={connectWallet}>
-            <Wallet size={17} />
-            <span>{account ? shortAddress(account) : 'Connect'}</span>
+          <button disabled={chainBusy || !chainReady} onClick={() => void handleChainToggle()} type="button">
+            {chainMode ? 'Local Mode' : 'Chain Mode'}
           </button>
-          <button type="button" className="icon-text-button secondary" onClick={addMegaEth}>
-            <Landmark size={17} />
-            <span>{chainId === MEGAETH_CHAIN_ID_HEX ? 'MegaETH' : 'Network'}</span>
-          </button>
-          {isChainMode && (
+          {chainMode && (
+            <button disabled={chainBusy} onClick={() => void connectAndSync()} type="button">
+              <Wallet size={16} />
+              {chainAccount ? formatAddress(chainAccount) : walletMode === 'moss' ? 'Connect MOSS' : 'Connect'}
+            </button>
+          )}
+          {chainMode && chainAccount && (
             <button
+              disabled={chainBusy}
+              onClick={() => void copyAccountAddress()}
+              title={chainAccount}
               type="button"
-              className="icon-text-button chain-action"
+            >
+              <Copy size={16} />
+              Copy
+            </button>
+          )}
+          {chainMode && walletMode === 'moss' && (
+            <button disabled={chainBusy || !mossReady} onClick={() => void fundMossWallet()} type="button">
+              <CircleDollarSign size={16} />
+              Fund MOSS
+            </button>
+          )}
+          {chainMode && (
+            <button disabled={chainBusy} onClick={() => void handleNetworkAction()} type="button">
+              <Landmark size={16} />
+              {walletMode === 'moss' ? 'MOSS Testnet' : 'MegaETH'}
+            </button>
+          )}
+          {chainMode && walletMode === 'moss' && (
+            <button
+              className={mossSessionReady ? 'selected' : ''}
+              disabled={chainBusy || !chainAccount || !mossReady}
+              onClick={() => void enableMossGameplaySession()}
+              type="button"
+            >
+              <Sparkles size={16} />
+              {mossSessionReady ? 'Session Ready' : 'Gameplay Session'}
+            </button>
+          )}
+          {chainMode && chainAccount && !chainHasProfile && (
+            <button
+              disabled={chainBusy}
               onClick={() =>
-                chainSnapshot?.hasProfile ? void refreshChainState() : void createChainProfile()
+                void runChainAction(
+                  async () => {
+                    const chain = await loadChain()
+                    return walletMode === 'moss' ? chain.writeMossCreateProfile() : chain.writeCreateProfile()
+                  },
+                  'Ship profile created.',
+                )
               }
-              disabled={!account || !chainAddress || chainBusy || chainLoading}
+              type="button"
             >
-              <Sparkles size={17} />
-              <span>{chainSnapshot?.hasProfile ? 'Refresh' : 'Create Profile'}</span>
+              Create Profile
+            </button>
+          )}
+          {chainMode && chainAccount && (
+            <button disabled={chainBusy} onClick={() => void syncChain()} type="button">
+              Sync
             </button>
           )}
         </div>
       </header>
 
-      <section className="status-strip" aria-label="Realm status">
-        <StatusMetric label="Mode" value={playMode === 'chain' ? 'Contract mode' : 'Local simulation'} />
-        <StatusMetric label="Area" value={currentArea.name} />
-        <StatusMetric label="Chain" value={chainStatus} />
-        <StatusMetric label="Profile" value={walletNote} />
-        <StatusMetric
-          label="AFK bank"
-          value={activeActivity ? formatDuration(preview.elapsedMs) : '0s'}
-        />
-      </section>
+      <section className="notice">{notice}</section>
 
-      <div className="realm-grid">
-        <aside className="skills-panel panel">
-          <PanelTitle icon={Sparkles} title="Skills" />
+      <section className="dashboard">
+        <aside className="panel skill-panel">
+          <PanelTitle icon={Activity} title="Skills" />
           <div className="skill-list">
             {SKILLS.map((skill) => {
               const Icon = SKILL_ICONS[skill.id]
-              const xp = displayGame.skills[skill.id].xp
-              const progress = skillProgress(xp)
+              const level = getSkillLevel(game, skill.id)
+              const xp = game.skills[skill.id].xp
+              const next = getXpForNextLevel(level)
+              const progress = Math.min(100, (xp / next) * 100)
 
               return (
-                <div className={`skill-row tone-${skill.tone}`} key={skill.id}>
-                  <div className="skill-icon">
-                    <Icon size={18} />
+                <div
+                  aria-label={`${skill.name}: ${skill.description}`}
+                  className="skill-row"
+                  data-tooltip={skill.description}
+                  key={skill.id}
+                  tabIndex={0}
+                  title={skill.description}
+                >
+                  <Icon size={15} />
+                  <div className="skill-name">
+                    <strong>{skill.name}</strong>
                   </div>
-                  <div className="skill-copy">
-                    <div className="row-between">
-                      <strong>{skill.name}</strong>
-                      <span>Lv {progress.level}</span>
-                    </div>
-                    <div className="progress-track">
-                      <span style={{ width: `${progress.progress}%` }} />
+                  <span className={`skill-category ${skill.category.toLowerCase()}`}>{skill.category}</span>
+                  <div className="skill-level">
+                    <b>{level}</b>
+                    <div className="mini-bar">
+                      <span style={{ width: `${progress}%` }} />
                     </div>
                   </div>
                 </div>
@@ -1191,1109 +703,687 @@ function App() {
           </div>
         </aside>
 
-        <section className="play-panel">
-          <div className="scene-wrap">
-            <ActivityScene activity={activeActivity} preview={preview} />
-            <div className="scene-hud">
+        <section className="panel mission-panel">
+          <GameScene activity={activeActivity} isActive={Boolean(game.activeMission)} />
+
+          <div className={game.activeMission ? 'active-mission active' : 'active-mission'}>
+            <div className="active-mission-top">
               <div>
-                <span className="eyebrow">Active</span>
-                <strong>{activeActivity ? activeActivity.name : 'Hearth Camp'}</strong>
+                <span>Current Mission</span>
+                <strong>{activeActivity ? activeActivity.name : 'No active mission'}</strong>
               </div>
-              <div className="cycle-meter">
-                <Clock size={15} />
-                <span>
-                  {activeActivity
-                    ? formatReadyCycles(preview.cycles, totalReadyCycles)
-                    : 'No task'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="action-panels">
-            <section className="action-dock panel resource-action-panel">
-              <div className="dock-heading">
-                <div className="activity-tabs">
-                  <div className="segmented resource-segmented" aria-label="Resource activity group">
-                    {RESOURCE_GROUPS.map((group) => (
-                      <button
-                        type="button"
-                        key={group}
-                        className={selectedGroup === group ? 'selected' : ''}
-                        onClick={() => setSelectedGroup(group)}
-                      >
-                        <span>{group}</span>
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="segmented sub-segmented" aria-label={`${selectedGroup} skill`}>
-                    {activitySubtabs.map((skillId) => {
-                      const Icon = SKILL_ICONS[skillId]
-
-                      return (
-                        <button
-                          type="button"
-                          key={skillId}
-                          className={selectedActivitySubtab === skillId ? 'selected' : ''}
-                          onClick={() =>
-                            setSelectedActivitySkill((current) => ({
-                              ...current,
-                              [selectedGroup]: skillId,
-                            }))
-                          }
-                        >
-                          <Icon size={15} />
-                          <span>{SKILL_NAMES[skillId]}</span>
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="activity-list">
-                {visibleResourceActivities.length === 0 ? (
-                  <div className="empty-activities">
-                    No {activityListLabel.toLowerCase()} routes in {currentArea.name}
-                  </div>
-                ) : (
-                  visibleResourceActivities.map((activity) => (
-                    <ActivityButton
-                      activity={activity}
-                      game={displayGame}
-                      isActive={displayGame.active?.id === activity.id}
-                      modeLock={
-                        chainProfileLock ??
-                        (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
-                      }
-                      key={activity.id}
-                      onStart={() => startActivity(activity.id)}
-                    />
-                  ))
-                )}
-              </div>
-            </section>
-
-            <section className="action-dock panel combat-action-panel">
-              <div className="dock-heading combat-heading">
-                <div className="combat-heading-copy">
-                  <Swords size={18} />
-                  <strong>Combat</strong>
-                </div>
+              <div className="mission-actions">
                 <button
+                  disabled={!game.activeMission || preview.cycles === 0 || chainBusy}
+                  onClick={handleClaimMission}
                   type="button"
-                  className="claim-button"
-                  onClick={claim}
-                  disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
                 >
-                  <CircleDollarSign size={18} />
-                  <span>Claim</span>
+                  Claim {preview.cycles > 0 ? `(${preview.cycles})` : ''}
+                </button>
+                <button
+                  aria-label="Stop mission"
+                  disabled={!game.activeMission || chainBusy}
+                  onClick={handleStopMission}
+                  title="Stop mission"
+                  type="button"
+                >
+                  <Square size={16} />
                 </button>
               </div>
+            </div>
 
-              <div className="activity-list combat-list">
-                {visibleCombatActivities.length === 0 ? (
-                  <div className="empty-activities">
-                    No combat routes in {currentArea.name}
-                  </div>
-                ) : (
-                  visibleCombatActivities.map((activity) => (
-                    <ActivityButton
-                      activity={activity}
-                      game={displayGame}
-                      isActive={displayGame.active?.id === activity.id}
-                      modeLock={
-                        chainProfileLock ??
-                        (isChainMode && !getContractActivity(activity.id) ? 'Local only' : null)
-                      }
-                      key={activity.id}
-                      onStart={() => startActivity(activity.id)}
-                    />
-                  ))
-                )}
+            <div className="mission-progress-large">
+              <span style={{ width: `${progressPct}%` }} />
+            </div>
+
+            <div className="mission-readouts">
+              <div>
+                <span>Cycle</span>
+                <strong>{activeActivity ? `${Math.round(activeActivity.cycleMs / 1000)}s` : '--'}</strong>
               </div>
-
-              <div className="combat-safety">
-                <div className="combat-safety-title">
-                  <Heart size={16} />
-                  <strong>Combat Safety</strong>
-                </div>
-                <div className="safety-controls">
-                  <label className="safety-toggle">
-                    <input
-                      type="checkbox"
-                      checked={displayGame.combatSettings.autoEat}
-                      onChange={(event) => updateCombatSettings({ autoEat: event.target.checked })}
-                      disabled={isChainMode && (!chainSnapshot?.hasProfile || chainBusy)}
-                    />
-                    <span>Auto-eat</span>
-                  </label>
-
-                  <label>
-                    <span>Food</span>
-                    <select
-                      value={displayGame.combatSettings.foodItemId ?? ''}
-                      onChange={(event) =>
-                        updateCombatSettings({
-                          foodItemId: (event.target.value as ItemId) || null,
-                        })
-                      }
-                      disabled={
-                        !displayGame.combatSettings.autoEat ||
-                        foodItems.length === 0 ||
-                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
-                      }
-                    >
-                      {foodItems.map((itemId) => (
-                        <option value={itemId} key={itemId}>
-                          {ITEMS[itemId].name} ({displayGame.inventory[itemId]})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label>
-                    <span>Stop HP</span>
-                    <input
-                      min="1"
-                      max={Math.max(1, maxHitpoints - 1)}
-                      step="1"
-                      type="number"
-                      value={displayGame.combatSettings.stopAtHitpoints}
-                      onChange={(event) =>
-                        updateCombatSettings({
-                          stopAtHitpoints: Math.max(
-                            1,
-                            Math.floor(Number(event.target.value) || 1),
-                          ),
-                        })
-                      }
-                      disabled={
-                        !displayGame.combatSettings.autoEat ||
-                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    <span>Max food</span>
-                    <input
-                      min="1"
-                      max="99"
-                      step="1"
-                      type="number"
-                      value={displayGame.combatSettings.maxFoodPerClaim}
-                      onChange={(event) =>
-                        updateCombatSettings({
-                          maxFoodPerClaim: Math.max(
-                            1,
-                            Math.floor(Number(event.target.value) || 1),
-                          ),
-                        })
-                      }
-                      disabled={
-                        !displayGame.combatSettings.autoEat ||
-                        (isChainMode && (!chainSnapshot?.hasProfile || chainBusy))
-                      }
-                    />
-                  </label>
-
-                  {isChainMode && (
-                    <button
-                      type="button"
-                      className="safety-action"
-                      onClick={() => void saveChainCombatSafety()}
-                      disabled={!chainSnapshot?.hasProfile || chainBusy}
-                    >
-                      <Heart size={15} />
-                      <span>Toggle Auto-Eat</span>
-                    </button>
-                  )}
-                </div>
+              <div>
+                <span>Pending</span>
+                <strong>{preview.cycles}</strong>
               </div>
-            </section>
+              <div>
+                <span>Hull Delta</span>
+                <strong>{preview.hullDamage > 0 ? `-${preview.hullDamage}` : 'Stable'}</strong>
+              </div>
+              <div className="wide">
+                <span>Per Cycle</span>
+                <strong>{activeActivity ? formatRewards(activeActivity.rewards) : 'No output'}</strong>
+              </div>
+              <div className="wide">
+                <span>Claimable</span>
+                <strong>{preview.cycles > 0 ? formatRewards(preview.rewards) : 'No claim ready'}</strong>
+              </div>
+            </div>
           </div>
-        </section>
 
-        <aside className="right-rail">
-          <section className="panel area-panel">
-            <PanelTitle icon={MapPinned} title="Harbor Merchant" />
-            <div className="area-routes">
-              {AREAS.map((area) => {
-                const unlocked = isAreaUnlocked(displayGame, area.id)
-                const selected = displayGame.currentAreaId === area.id
-                const canAfford = displayGame.inventory.crowns >= area.shipCost
-                const routeLabel = selected
-                  ? 'Current'
-                  : unlocked
-                    ? 'Sail'
-                    : canAfford
-                      ? `Pay ${area.shipCost.toLocaleString()}`
-                      : `Need ${area.shipCost.toLocaleString()}`
-
-                return (
-                  <button
-                    type="button"
-                    className={`area-route ${selected ? 'selected' : ''} ${
-                      unlocked ? '' : 'locked'
-                    }`}
-                    key={area.id}
-                    onClick={() => void sailToArea(area.id)}
-                    disabled={
-                      selected || chainBusy || (isChainMode && !chainSnapshot?.hasProfile)
-                    }
-                    title={
-                      unlocked
-                        ? area.routeLabel
-                        : `${area.dockName}: ${area.shipCost.toLocaleString()} Crowns`
-                    }
-                  >
-                    <span className="area-route-icon">
-                      <Ship size={18} />
-                    </span>
-                    <span className="area-route-copy">
-                      <strong>{area.name}</strong>
-                      <small>{area.description}</small>
-                    </span>
-                    <span className={selected || unlocked ? 'route-chip' : 'route-chip locked'}>
-                      {routeLabel}
-                    </span>
-                  </button>
-                )
-              })}
-            </div>
-          </section>
-
-          <section className="panel equipment-panel">
-            <PanelTitle icon={Shield} title="Equipment" />
-            <div className="equipment-grid">
-              {EQUIPMENT_SLOTS.map((slot) => {
-                const itemId = displayGame.equipment[slot]
-                const item = itemId ? ITEMS[itemId] : null
-                const Icon = itemId ? ITEM_ICONS[itemId] : Package
-
-                return (
-                  <button
-                    type="button"
-                    className="equipment-slot"
-                    key={slot}
-                    onClick={() => itemId && void unequip(slot)}
-                    title={item ? `Unequip ${item.name}` : slot}
-                  >
-                    <Icon size={20} />
-                    <span>{item ? item.name : slot}</span>
-                  </button>
-                )
-              })}
-            </div>
-            <div className="equipment-stats">
-              <span>ATK +{equipmentStats.attack}</span>
-              <span>DEF +{equipmentStats.defence}</span>
-              <span>HP +{equipmentStats.hitpoints}</span>
-            </div>
-          </section>
-
-          <section className="panel inventory-panel">
-            <PanelTitle icon={Package} title="Inventory" />
-            <div className="inventory-grid">
-              {visibleInventoryItems.length === 0 ? (
-                <div className="empty-inventory">No items</div>
-              ) : (
-                visibleInventoryItems.map((itemId) => {
-                  const item = ITEMS[itemId]
-                  const Icon = ITEM_ICONS[itemId]
-                  const count = displayGame.inventory[itemId]
-
-                  return (
-                    <button
-                      type="button"
-                      className={`item-cell ${item.healAmount ? 'edible' : ''}`}
-                      key={itemId}
-                      onClick={() => void handleInventoryItem(itemId)}
-                      disabled={(!item.slot && !item.healAmount) || count <= 0}
-                      title={
-                        item.slot
-                          ? `Equip ${item.name}`
-                          : item.healAmount
-                            ? `Eat ${item.name}`
-                            : item.name
-                      }
-                    >
-                      <Icon size={19} />
-                      <span>{count}</span>
-                      <small>{item.name}</small>
-                    </button>
-                  )
-                })
-              )}
-            </div>
-          </section>
-        </aside>
-      </div>
-
-      <section className="exchange-band">
-        <div className="panel exchange-panel">
-          <PanelTitle icon={Landmark} title="Hoard Hall" />
-          <div className="market-toolbar">
-            <div className="market-filters" aria-label="Market filters">
-              {MARKET_CATEGORIES.map((category) => (
+          <div className="mission-header">
+            <PanelTitle icon={GROUP_ICONS[selectedGroup]} title="Missions" />
+            <div className="segmented">
+              {GROUPS.map((group) => (
                 <button
+                  className={selectedGroup === group ? 'selected' : ''}
+                  key={group}
+                  onClick={() => setSelectedGroup(group)}
                   type="button"
-                  className={marketFilter === category ? 'selected' : ''}
-                  key={category}
-                  onClick={() => setMarketFilter(category)}
                 >
-                  {category}
+                  {group}
                 </button>
               ))}
             </div>
+          </div>
 
-            <form
-              className="listing-form"
-              onSubmit={(event) => {
-                event.preventDefault()
-                void createListing()
-              }}
+          <div className={`mission-skill-filter filter-${selectedGroup.toLowerCase()}`}>
+            <span>Skill</span>
+            <button
+              className={selectedSkillFilter === 'all' ? 'selected' : ''}
+              onClick={() => setMissionSkillFilter('all')}
+              type="button"
             >
+              All
+              <b>{groupActivities.length}</b>
+            </button>
+            {groupSkills.map((skill) => {
+              const skillActivityCount = groupActivities.filter((activity) => activityMatchesSkill(activity, skill.id)).length
+              return (
+                <button
+                  className={selectedSkillFilter === skill.id ? 'selected' : ''}
+                  key={skill.id}
+                  onClick={() => setMissionSkillFilter(skill.id)}
+                  type="button"
+                >
+                  {skill.name}
+                  <b>{skillActivityCount}</b>
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="mission-grid">
+            {visibleActivities.map((activity) => (
+              <MissionCard
+                activity={activity}
+                game={game}
+                key={activity.id}
+                onStart={() => handleMissionStart(activity)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <aside className="panel ship-panel">
+          <PanelTitle icon={Rocket} title="Ship Status" />
+          <div className={hullPct <= 35 ? 'hull-card low-hull' : 'hull-card'}>
+            <div className="hull-line">
+              <span>Hull Integrity</span>
+              <strong>{Math.ceil(game.ship.currentHull)} / {game.ship.maxHull}</strong>
+            </div>
+            <div className="hull-bar">
+              <span style={{ width: `${hullPct}%` }} />
+            </div>
+          </div>
+
+          <div className="combat-settings">
+            <label>
+              <input
+                checked={game.combatSettings.autoRepair}
+                disabled={chainBusy}
+                onChange={(event) => commitCombatSettings({ autoRepair: event.currentTarget.checked })}
+                type="checkbox"
+              />
+              Auto-repair
+            </label>
+            <label>
+              Stop Hull
+              <input
+                max={Math.max(1, game.ship.maxHull - 1)}
+                min={1}
+                disabled={chainBusy}
+                onChange={(event) =>
+                  editCombatSettings({ stopAtHull: Number(event.currentTarget.value) })
+                }
+                onBlur={(event) => commitCombatSettings({ stopAtHull: Number(event.currentTarget.value) })}
+                type="number"
+                value={game.combatSettings.stopAtHull}
+              />
+            </label>
+            <label>
+              Repair Supply
               <select
-                aria-label="Listing item"
-                value={selectedListingItem}
-                onChange={(event) => {
-                  const itemId = event.target.value as ItemId
-                  setListingItem(itemId)
-                  setListingPrice(String(ITEMS[itemId].marketPrice))
-                }}
-                disabled={listableItems.length === 0 || chainBusy}
+                disabled={chainBusy}
+                onChange={(event) => commitCombatSettings({ repairItemId: event.currentTarget.value as ItemId })}
+                value={game.combatSettings.repairItemId}
               >
-                {listableItems.length === 0 ? (
-                  <option value="">No items</option>
-                ) : (
-                  listableItems.map((itemId) => (
-                    <option value={itemId} key={itemId}>
-                      {ITEMS[itemId].name} ({getListableItemCount(displayGame, itemId, isChainMode)})
-                    </option>
-                  ))
-                )}
+                {REPAIR_ITEMS.map((itemId) => (
+                  <option key={itemId} value={itemId}>
+                    {ITEMS[itemId].name} ({game.cargo[itemId]})
+                  </option>
+                ))}
               </select>
-              <input
-                aria-label="Listing quantity"
-                min="1"
-                step="1"
-                type="number"
-                value={listingQuantity}
-                onChange={(event) => setListingQuantity(event.target.value)}
-                disabled={chainBusy}
-              />
-              <input
-                aria-label="Listing price"
-                min="1"
-                placeholder={selectedListingItem ? String(ITEMS[selectedListingItem].marketPrice) : '1'}
-                step="1"
-                type="number"
-                value={listingPrice}
-                onChange={(event) => setListingPrice(event.target.value)}
-                disabled={chainBusy}
-              />
-              <button type="submit" disabled={listableItems.length === 0 || chainBusy}>
-                <Plus size={15} />
-                <span>List</span>
-              </button>
-            </form>
+            </label>
           </div>
-          {detailItem && <ItemDetail itemId={detailItem} />}
-          <div className="market-list">
-            {visibleMarketOrders.length === 0 ? (
-              <div className="empty-market">
-                {isChainMode ? 'No open chain orders' : 'No open orders'}
-              </div>
-            ) : (
-              visibleMarketOrders.map((order) => {
-                const item = ITEMS[order.itemId]
-                const Icon = ITEM_ICONS[order.itemId]
-                const row = MARKET_ROWS.find((entry) => entry.itemId === order.itemId)
 
-                return (
-                  <div
-                    className={`market-row ${order.seller === 'Player' ? 'own-order' : ''}`}
-                    key={order.id}
+          <PanelTitle icon={Shield} title="Ship Modules" />
+          <div className="module-grid">
+            {MODULE_SLOTS.map((slot) => {
+              const itemId = game.ship.modules[slot]
+              return (
+                <div className={`module-slot slot-${slot} ${itemId ? 'filled' : ''}`} key={slot}>
+                  <span>{formatModuleSlot(slot)}</span>
+                  <strong>{itemId ? ITEMS[itemId].name : 'Empty'}</strong>
+                  <em>{itemId ? formatModuleStats(ITEMS[itemId].stats) : 'Offline'}</em>
+                  <button
+                    disabled={!itemId || chainBusy}
+                    onClick={() => handleUnequipModule(slot)}
+                    type="button"
                   >
-                    <button
-                      type="button"
-                      className="market-item market-item-button"
-                      onClick={() => setSelectedMarketItem(order.itemId)}
-                    >
-                      <div className="market-icon">
-                        <Icon size={18} />
-                      </div>
-                      <div>
-                        <strong>{item.name}</strong>
-                        <span>{item.kind}</span>
-                      </div>
-                    </button>
-                    <div className="seller-chip">
-                      {order.seller} {order.side === 'buy' ? 'Buy' : 'Sell'}
-                    </div>
-                    <div className="market-quantity">
-                      {order.side === 'buy' && order.seller === 'Realm'
-                        ? 'Floor'
-                        : `${order.quantity}x`}
-                    </div>
-                    <div className="sparkline" aria-hidden="true">
-                      {(row?.spark ?? []).map((height, index) => (
-                        <i key={index} style={{ height }} />
-                      ))}
-                    </div>
-                    <div
-                      className={
-                        (row?.change ?? 0) >= 0 ? 'market-change up' : 'market-change down'
-                      }
-                    >
-                      {(row?.change ?? 0) >= 0 ? '+' : ''}
-                      {row?.change ?? 0}%
-                    </div>
-                    <div className="market-price">
-                      <Coins size={15} />
-                      <span>{order.unitPrice}</span>
-                    </div>
-                    <div className="market-actions">
-                      {order.seller === 'Player' ? (
-                        <button
-                          type="button"
-                          className="cancel-order"
-                          onClick={() => void cancelOrder(order.id)}
-                          disabled={chainBusy}
-                        >
-                          <X size={15} />
-                          <span>Cancel</span>
-                        </button>
-                      ) : order.side === 'buy' ? (
-                        <button
-                          type="button"
-                          onClick={() => void buyOrder(order.id)}
-                          disabled={chainBusy || displayGame.inventory[order.itemId] <= 0}
-                        >
-                          <CircleDollarSign size={15} />
-                          <span>Sell 1</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void buyOrder(order.id)}
-                          disabled={chainBusy}
-                        >
-                          <ShoppingCart size={15} />
-                          <span>Buy 1</span>
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )
-              })
-            )}
+                    Remove
+                  </button>
+                </div>
+              )
+            })}
           </div>
-        </div>
 
-        <div className="panel log-panel">
-          <PanelTitle icon={Clock} title="Log" />
-          <div className="event-log">
-            {displayGame.log.map((entry, index) => (
-              <div className="log-entry" key={`${entry}-${index}`}>
-                {entry}
+          <PanelTitle icon={Compass} title="Sectors" />
+          <div className="sector-list">
+            {SECTORS.map((entry) => {
+              const unlock = getSectorUnlockStatus(game, entry)
+              const isCurrent = entry.id === game.currentSectorId
+              return (
+                <button
+                  className={isCurrent ? 'sector selected' : 'sector'}
+                  disabled={chainBusy || isCurrent || (!game.unlockedSectors[entry.id] && !unlock.canStart)}
+                  key={entry.id}
+                  onClick={() => handleTravelToSector(entry.id)}
+                  type="button"
+                >
+                  <strong>{entry.name}</strong>
+                  <span>
+                    {game.unlockedSectors[entry.id]
+                      ? isCurrent
+                        ? 'Current'
+                        : 'Unlocked'
+                      : unlock.reasons.join(', ')}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </aside>
+      </section>
+
+      <section className="lower-grid">
+        <section className="panel">
+          <PanelTitle icon={Package} title="Cargo Hold" />
+          <div className="cargo-grid">
+            {getCargoEntries(game).map(([itemId, amount]) => (
+              <CargoCard
+                amount={amount}
+                itemId={itemId}
+                key={itemId}
+                onEquip={() => handleEquipModule(itemId)}
+                onRepair={() => handleRepairHull(itemId)}
+                onSell={() => handleSellCargoItem(itemId)}
+              />
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <PanelTitle icon={ShoppingCart} title="Trade Relay" />
+          <div className="trade-list">
+            {game.marketOrders.map((order) => (
+              <div className="trade-row" key={order.id}>
+                <div className="trade-item">
+                  <strong>{ITEMS[order.itemId].name}</strong>
+                </div>
+                <div className="trade-action">
+                  <span>{order.quantity} available</span>
+                  <button
+                    disabled={chainBusy || order.quantity <= 0 || game.cargo.credits < order.unitPrice}
+                    onClick={() => handleBuyRelayItem(order.id)}
+                    type="button"
+                  >
+                    Buy <span aria-hidden="true" className="button-divider" /> {order.unitPrice}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
-        </div>
-      </section>
+        </section>
 
-      {welcomeBackReport && (
-        <WelcomeBackModal
-          report={welcomeBackReport}
-          onClose={() => setWelcomeBackReport(null)}
-        />
-      )}
+        <section className="panel">
+          <PanelTitle icon={Activity} title="Event Log" />
+          <div className="event-log">
+            {game.eventLog.map((entry, index) => (
+              <p className={`event-${getEventLogKind(entry)}`} key={`${entry}-${index}`}>{entry}</p>
+            ))}
+          </div>
+        </section>
+      </section>
     </main>
   )
 }
 
-function WelcomeBackModal({
-  report,
-  onClose,
-}: {
-  report: WelcomeBackReport
-  onClose: () => void
-}) {
+interface StatPillProps {
+  icon: typeof Activity
+  label: string
+  value: string
+}
+
+function StatPill({ icon: Icon, label, value }: StatPillProps) {
   return (
-    <div className="welcome-back-backdrop">
-      <section
-        aria-labelledby="welcome-back-title"
-        aria-modal="true"
-        className="welcome-back-modal"
-        role="dialog"
-      >
-        <div className="welcome-back-icon">
-          <Swords size={42} />
-        </div>
-        <h2 id="welcome-back-title">Welcome Back!</h2>
-        <p>
-          You were gone for roughly <strong>{formatLongDuration(report.awayMs)}</strong>.
-        </p>
-        <span className="welcome-back-cap">
-          {formatLongDuration(AFK_CAP_MS)} is the maximum offline progression
-          {report.capped ? ' and your rewards hit that cap' : ''}
-        </span>
-
-        <div className="welcome-back-summary">
-          <span>While you were gone:</span>
-          <strong>{report.activityName}</strong>
-        </div>
-
-        <div className="welcome-back-lines">
-          {report.lines.map((line, index) => (
-            <div className={`welcome-back-line tone-${line.tone}`} key={`${line.text}-${index}`}>
-              {line.text}
-            </div>
-          ))}
-        </div>
-
-        <button type="button" onClick={onClose} autoFocus>
-          OK
-        </button>
-      </section>
-    </div>
-  )
-}
-
-function createWelcomeBackReport(
-  before: GameState,
-  after: GameState,
-  preview: ClaimPreview,
-  awayMs: number,
-): WelcomeBackReport | null {
-  const activity = before.active ? ACTIVITY_BY_ID[before.active.id] : null
-  if (!activity) {
-    return null
-  }
-
-  const lines: WelcomeBackLine[] = []
-
-  if (preview.cycles > 0) {
-    lines.push({
-      tone: 'neutral',
-      text: `You completed ${formatCount(preview.cycles)} ${formatCycleLabel(preview.cycles)} at ${activity.name}`,
-    })
-  }
-
-  for (const skill of SKILLS) {
-    const gainedXp = preview.xp[skill.id] ?? 0
-    if (gainedXp > 0) {
-      lines.push({
-        tone: 'good',
-        text: `You gained ${formatCount(gainedXp)} ${skill.name} XP`,
-      })
-    }
-
-    const beforeLevel = levelFromXp(before.skills[skill.id].xp)
-    const afterLevel = levelFromXp(after.skills[skill.id].xp)
-    if (afterLevel > beforeLevel) {
-      lines.push({
-        tone: 'good',
-        text: `You leveled up ${skill.name} (${beforeLevel}->${afterLevel})`,
-      })
-    }
-  }
-
-  for (const [itemId, amount] of Object.entries(preview.rewards)) {
-    const regularAmount = amount - (preview.rareDrops[itemId as ItemId] ?? 0)
-    if (regularAmount > 0) {
-      lines.push({
-        tone: itemId === 'crowns' ? 'good' : 'neutral',
-        text: `You gained ${formatCount(regularAmount)} ${ITEMS[itemId as ItemId].name}`,
-      })
-    }
-  }
-
-  for (const [itemId, amount] of Object.entries(preview.rareDrops)) {
-    if (amount > 0) {
-      lines.push({
-        tone: 'good',
-        text: `You found ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
-      })
-    }
-  }
-
-  for (const [itemId, amount] of Object.entries(preview.costs)) {
-    if (amount > 0) {
-      lines.push({
-        tone: 'warn',
-        text: `You used ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
-      })
-    }
-  }
-
-  for (const [itemId, amount] of Object.entries(preview.burned)) {
-    if (amount > 0) {
-      lines.push({
-        tone: 'warn',
-        text: `${formatCount(amount)} ${ITEMS[itemId as ItemId].name} burned`,
-      })
-    }
-  }
-
-  for (const [itemId, amount] of Object.entries(preview.autoEaten)) {
-    if (amount > 0) {
-      lines.push({
-        tone: 'good',
-        text: `Auto-ate ${formatCount(amount)} ${ITEMS[itemId as ItemId].name}`,
-      })
-    }
-  }
-
-  if (preview.hpRestored > 0) {
-    lines.push({ tone: 'good', text: `You restored ${formatCount(preview.hpRestored)} HP` })
-  }
-
-  if (preview.hpLost > 0) {
-    lines.push({ tone: 'warn', text: `You lost ${formatCount(preview.hpLost)} HP` })
-  }
-
-  if (preview.deathPenalty.lostCrowns > 0) {
-    lines.push({
-      tone: 'danger',
-      text: `You lost ${formatCount(preview.deathPenalty.lostCrowns)} Crowns`,
-    })
-  }
-
-  for (const itemId of preview.deathPenalty.lostEquipment) {
-    lines.push({ tone: 'danger', text: `You lost equipped ${ITEMS[itemId].name}` })
-  }
-
-  if (preview.stoppedByHp) {
-    lines.push({ tone: 'danger', text: 'Combat stopped because your HP hit 0' })
-  } else if (preview.stoppedBySafety) {
-    lines.push({ tone: 'warn', text: 'Combat stopped at your auto-eat safety threshold' })
-  }
-
-  if (lines.length === 0) {
-    lines.push({ tone: 'neutral', text: 'No completed cycles were ready' })
-  }
-
-  return {
-    activityName: activity.name,
-    awayMs,
-    capped: preview.elapsedMs >= AFK_CAP_MS,
-    lines,
-  }
-}
-
-function createChainWelcomeBackReport(
-  snapshot: ChainSnapshot | null,
-  returnedAt: number,
-  awayMs: number,
-): WelcomeBackReport | null {
-  const activity = snapshot?.active ? ACTIVITY_BY_ID[snapshot.active.id] : null
-  if (!snapshot?.active || !activity) {
-    return null
-  }
-
-  const totalReadyCycles = getChainReadyCycles(snapshot, activity, returnedAt)
-  if (totalReadyCycles <= 0) {
-    return null
-  }
-
-  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
-  const lines: WelcomeBackLine[] = [
-    {
-      tone: 'neutral',
-      text: `${formatCount(totalReadyCycles)} onchain ${formatCycleLabel(totalReadyCycles)} ready`,
-    },
-    {
-      tone: totalReadyCycles > claimableCycles ? 'warn' : 'neutral',
-      text:
-        totalReadyCycles > claimableCycles
-          ? `Next claim will settle ${formatCount(claimableCycles)} cycles`
-          : 'Press Claim to settle these cycles onchain',
-    },
-    {
-      tone: 'warn',
-      text: 'Rewards mint after the Claim transaction confirms',
-    },
-  ]
-
-  return {
-    activityName: activity.name,
-    awayMs,
-    capped: getChainElapsedMs(snapshot, activity, returnedAt) >= AFK_CAP_MS,
-    lines,
-  }
-}
-
-function formatCycleLabel(count: number) {
-  return count === 1 ? 'cycle' : 'cycles'
-}
-
-function formatCount(value: number) {
-  return Math.floor(value).toLocaleString()
-}
-
-function formatLongDuration(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000))
-  const hours = Math.floor(totalSeconds / 3600)
-  const minutes = Math.floor((totalSeconds % 3600) / 60)
-  const seconds = totalSeconds % 60
-  const parts = [
-    hours > 0 ? `${hours} ${hours === 1 ? 'hour' : 'hours'}` : '',
-    minutes > 0 || hours > 0 ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : '',
-    `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`,
-  ].filter(Boolean)
-
-  return parts.join(', ')
-}
-
-function ItemDetail({ itemId }: { itemId: ItemId }) {
-  const item = ITEMS[itemId]
-  const Icon = ITEM_ICONS[itemId]
-  const sources = getItemSources(itemId)
-  const uses = getItemUses(itemId)
-
-  return (
-    <div className="item-detail-panel">
-      <div className="item-detail-heading">
-        <div className="market-icon">
-          <Icon size={18} />
-        </div>
-        <div>
-          <strong>{item.name}</strong>
-          <span>
-            {item.kind} / {getMarketCategory(itemId)}
-          </span>
-        </div>
-      </div>
-      <div className="item-detail-stat">
-        <Coins size={14} />
-        <span>{item.marketPrice} reference</span>
-      </div>
-      <div className="item-detail-copy">
-        <span>Sources</span>
-        <strong>{formatDetailList(sources, 'No current source')}</strong>
-      </div>
-      <div className="item-detail-copy">
-        <span>Uses</span>
-        <strong>{formatDetailList(uses, 'No current use')}</strong>
-      </div>
-    </div>
-  )
-}
-
-function formatDetailList(entries: string[], fallback: string): string {
-  if (entries.length === 0) {
-    return fallback
-  }
-
-  return entries.slice(0, 4).join(', ')
-}
-
-function StatusMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="status-metric">
+    <div className="stat-pill">
+      <Icon size={16} />
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
   )
 }
 
-function getAvailableItemCount(game: GameState, itemId: ItemId): number {
-  const equippedCount = Object.values(game.equipment).filter((equipped) => equipped === itemId).length
-  return Math.max(0, game.inventory[itemId] - equippedCount)
+function formatAddress(address: Address): string {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`
 }
 
-function getListableItemCount(game: GameState, itemId: ItemId, isChainMode: boolean): number {
-  if (isChainMode) {
-    return Math.max(0, game.inventory[itemId])
-  }
-
-  return getAvailableItemCount(game, itemId)
+interface PanelTitleProps {
+  icon: typeof Activity
+  title: string
 }
 
-function PanelTitle({ icon: Icon, title }: { icon: LucideIcon; title: string }) {
+function PanelTitle({ icon: Icon, title }: PanelTitleProps) {
   return (
     <div className="panel-title">
-      <Icon size={18} />
+      <Icon size={16} />
       <h2>{title}</h2>
     </div>
   )
 }
 
-function ActivityButton({
-  activity,
-  game,
-  isActive,
-  modeLock,
-  onStart,
-}: {
+interface MissionCardProps {
   activity: ActivityDefinition
   game: GameState
-  isActive: boolean
-  modeLock: string | null
-  onStart: () => void | Promise<void>
-}) {
-  const Icon = SKILL_ICONS[activity.primarySkill]
-  const locks = getActivityLocks(activity, game)
-  const effectiveLocks = modeLock ? [modeLock, ...locks] : locks
-  const lock = effectiveLocks[0] ?? null
-  const lockLabel =
-    effectiveLocks.length > 1 ? `${effectiveLocks[0]} +${effectiveLocks.length - 1}` : lock
-  const costText = formatMap(activity.costs)
-  const rewardText = formatActivityOutput(activity)
-  const riskText = formatActivityRisk(activity, game)
+  onStart: () => void
+}
+
+interface RequirementItem {
+  detail?: string
+  label: string
+  tooltip?: string
+}
+
+interface RequirementGroup {
+  items: RequirementItem[]
+  label: string
+  tone: 'route' | 'level' | 'cargo' | 'module' | 'ship'
+}
+
+function MissionCard({ activity, game, onStart }: MissionCardProps) {
+  const status = getActivityStatus(game, activity)
+  const requirementGroups = getMissionRequirementGroups(game, activity)
+  const Icon = GROUP_ICONS[activity.group]
+  const activeMissionId = game.activeMission?.activityId
+  const isRunning = activeMissionId === activity.id
+  const canSwitchFromActiveMission = Boolean(activeMissionId && !isRunning)
+  const canAttemptStart = status.canStart || canSwitchFromActiveMission
+
+  const groupClass = activity.group.toLowerCase()
 
   return (
-    <button
-      type="button"
-      className={`activity-card ${isActive ? 'running' : ''} ${
-        activity.combat?.boss ? 'boss-card' : ''
-      }`}
-      onClick={() => void onStart()}
-      title={effectiveLocks.length > 0 ? `Requires ${effectiveLocks.join(', ')}` : activity.name}
-    >
-      <span className="activity-emblem">
-        <Icon size={20} />
-      </span>
-      <span className="activity-main">
-        <strong>{activity.name}</strong>
-        <small>{activity.zone}</small>
-      </span>
-      <span className="activity-meta">
-        <small>{rewardText}</small>
-        {riskText && <small className="risk">{riskText}</small>}
-        {costText && <small className="cost">{costText}</small>}
-      </span>
-      <span className={lock ? 'lock-chip' : 'start-chip'}>{lockLabel ?? 'Start'}</span>
-    </button>
+    <article className={`mission-card mission-${groupClass} ${isRunning ? 'running' : ''}`}>
+      <header>
+        <Icon size={16} />
+        <div>
+          <h3>{activity.name}</h3>
+          <span>{getSectorById(activity.sectorId).name} - Tier {activity.tier}</span>
+        </div>
+        <b className="mission-type">{activity.group}</b>
+      </header>
+      <p>{activity.description}</p>
+      <dl>
+        <div>
+          <dt>Cycle</dt>
+          <dd>{Math.round(activity.cycleMs / 1000)}s</dd>
+        </div>
+        <div>
+          <dt>XP</dt>
+          <dd>{formatXp(activity)}</dd>
+        </div>
+        <div>
+          <dt>Output</dt>
+          <dd>{formatRewards(activity.rewards)}</dd>
+        </div>
+      </dl>
+      {!status.canStart && <MissionRequirements fallback={status.reasons} groups={requirementGroups} />}
+      <button disabled={!canAttemptStart || isRunning} onClick={onStart} type="button">
+        <Play size={16} />
+        {isRunning ? 'Running' : canSwitchFromActiveMission ? 'Switch' : 'Start'}
+      </button>
+    </article>
   )
 }
 
-function ActivityScene({
-  activity,
-  preview,
-}: {
-  activity: ActivityDefinition | null
-  preview: ClaimPreview
-}) {
-  const scene = activity?.scene ?? 'forest'
-  const activityClass = activity ? `activity-${activity.id}` : 'activity-camp'
+function MissionRequirements({ fallback, groups }: { fallback: string[]; groups: RequirementGroup[] }) {
+  if (groups.length === 0) {
+    return <small className="mission-requirement-fallback">{fallback.join(' ')}</small>
+  }
 
   return (
-    <div className={`activity-scene scene-${scene} ${activityClass}`}>
-      <div className="skyline" />
-      <div className="cloud cloud-a" />
-      <div className="cloud cloud-b" />
-      <div className="far-land" />
-      <div className="near-land" />
-      <div className="scene-prop prop-a" />
-      <div className="scene-prop prop-b" />
-      <div className="action-target" aria-hidden="true">
-        <span className="target-core" />
-        <span className="target-detail detail-a" />
-        <span className="target-detail detail-b" />
-      </div>
-      <div className="action-effects" aria-hidden="true">
-        <span className="effect effect-a" />
-        <span className="effect effect-b" />
-        <span className="effect effect-c" />
-      </div>
-      <div className="loot-pop" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </div>
-      <div className="adventurer">
-        <span className="helm" />
-        <span className="body" />
-        <span className="tool" />
-        <span className="offhand" />
-      </div>
-      <div className="scene-progress">
-        <span style={{ width: `${preview.progressPct}%` }} />
-      </div>
+    <div aria-label="Mission requirements" className="mission-requirements">
+      {groups.map((group) => (
+        <div className={`requirement-group req-${group.tone}`} key={group.label}>
+          <span>{group.label}</span>
+          <ul>
+            {group.items.map((item) => (
+              <li
+                className={item.tooltip ? 'has-tooltip' : undefined}
+                data-tooltip={item.tooltip}
+                key={`${group.label}-${item.label}-${item.detail ?? ''}`}
+                tabIndex={item.tooltip ? 0 : undefined}
+                title={item.tooltip}
+              >
+                <span>{item.label}</span>
+                {item.detail && <em>{item.detail}</em>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }
 
-function formatMap(map?: Partial<Record<ItemId, number>>) {
-  if (!map) {
-    return ''
+interface CargoCardProps {
+  amount: number
+  itemId: ItemId
+  onEquip: () => void
+  onRepair: () => void
+  onSell: () => void
+}
+
+function CargoCard({ amount, itemId, onEquip, onRepair, onSell }: CargoCardProps) {
+  const item = ITEMS[itemId]
+  const useTooltip = formatCargoUseTooltip(itemId)
+
+  return (
+    <article className="cargo-card">
+      <div>
+        <strong
+          className="cargo-name"
+          data-tooltip={useTooltip}
+          tabIndex={0}
+          title={useTooltip}
+        >
+          {item.name}
+        </strong>
+        <span>{item.kind}</span>
+      </div>
+      <b>{amount.toLocaleString()}</b>
+      <p>{item.description}</p>
+      <div className="cargo-actions">
+        {item.kind === 'module' && <button onClick={onEquip} type="button">Install</button>}
+        {item.kind === 'repair' && <button onClick={onRepair} type="button">Use</button>}
+        {item.tradable && itemId !== 'credits' && <button onClick={onSell} type="button">Sell</button>}
+      </div>
+    </article>
+  )
+}
+
+function getMissionProgress(activity: ActivityDefinition | null, game: GameState, now: number): number {
+  if (!activity || !game.activeMission) return 0
+  const elapsed = now - game.activeMission.lastClaimAt
+  return Math.min(100, ((elapsed % activity.cycleMs) / activity.cycleMs) * 100)
+}
+
+function sortMissionActivities(
+  activities: ActivityDefinition[],
+  selectedGroup: ActivityGroup,
+  selectedSkillFilter: MissionSkillFilter,
+): ActivityDefinition[] {
+  if (selectedSkillFilter !== 'all' || (selectedGroup !== 'Gathering' && selectedGroup !== 'Production')) {
+    return activities
   }
 
-  return Object.entries(map)
-    .filter(([, amount]) => amount > 0)
-    .map(([itemId, amount]) => `${amount} ${ITEMS[itemId as ItemId].name}`)
+  const skillOrder = new Map(SKILLS.map((skill, index) => [skill.id, index]))
+  const originalOrder = new Map(ACTIVITIES.map((activity, index) => [activity.id, index]))
+
+  return [...activities].sort((left, right) => {
+    const tierDelta = left.tier - right.tier
+    if (tierDelta !== 0) return tierDelta
+
+    const skillDelta = (skillOrder.get(left.primarySkill) ?? 0) - (skillOrder.get(right.primarySkill) ?? 0)
+    if (skillDelta !== 0) return skillDelta
+
+    return (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0)
+  })
+}
+
+function formatXp(activity: ActivityDefinition): string {
+  return Object.entries(activity.xp)
+    .map(([skillId, amount]) => `${amount} ${SKILLS.find((skill) => skill.id === skillId)?.name ?? skillId}`)
     .join(', ')
 }
 
-function formatActivityOutput(activity: ActivityDefinition) {
-  if (activity.cooking) {
-    return `Cooked ${ITEMS[activity.cooking.cookedItem].name}`
+function activityMatchesSkill(activity: ActivityDefinition, skillId: SkillId): boolean {
+  return activity.primarySkill === skillId || (activity.xp[skillId] ?? 0) > 0
+}
+
+function getMissionRequirementGroups(game: GameState, activity: ActivityDefinition): RequirementGroup[] {
+  const groups: RequirementGroup[] = []
+  const sector = getSectorById(activity.sectorId)
+  const routeItems: RequirementItem[] = []
+
+  if (!game.unlockedSectors[activity.sectorId]) {
+    routeItems.push({ label: `${sector.name} locked` })
   }
 
-  if (activity.combat?.dropTable?.length) {
-    const rarest = activity.combat.dropTable.reduce((lowest, entry) =>
-      entry.chance < lowest.chance ? entry : lowest,
+  if (game.currentSectorId !== activity.sectorId) {
+    routeItems.push({ label: `Travel to ${sector.name}` })
+  }
+
+  if (routeItems.length > 0) {
+    groups.push({ items: routeItems, label: 'Route', tone: 'route' })
+  }
+
+  const levelItems = (Object.entries(activity.levelReqs) as [SkillId, number][])
+    .filter(([skillId, level]) => getSkillLevel(game, skillId) < level)
+    .map(([skillId, level]) => ({ label: `Level ${level} ${getSkillName(skillId)}` }))
+
+  if (levelItems.length > 0) {
+    groups.push({ items: levelItems, label: 'Level', tone: 'level' })
+  }
+
+  const moduleItems: RequirementItem[] = []
+  if (activity.requiredModule && !hasItemEquippedOrInCargo(game, activity.requiredModule)) {
+    moduleItems.push({ label: ITEMS[activity.requiredModule].name })
+  }
+
+  if (activity.combat && !game.ship.modules.hardpoint) {
+    moduleItems.push({ label: 'Hardpoint module' })
+  }
+
+  if (moduleItems.length > 0) {
+    groups.push({ items: moduleItems, label: 'Module', tone: 'module' })
+  }
+
+  const shipItems: RequirementItem[] = []
+  if (activity.combat && game.ship.currentHull <= 0) {
+    shipItems.push({ label: 'Repair hull before combat' })
+  }
+
+  if (shipItems.length > 0) {
+    groups.push({ items: shipItems, label: 'Ship', tone: 'ship' })
+  }
+
+  const cargoItems = (Object.entries(activity.costs ?? {}) as [ItemId, number][])
+    .filter(([itemId, amount]) => game.cargo[itemId] < amount)
+    .map(([itemId, amount]) => ({
+      detail: `have ${game.cargo[itemId]}`,
+      label: formatItemQuantity(itemId, amount),
+      tooltip: formatCargoSourceTooltip(game, itemId),
+    }))
+
+  if (cargoItems.length > 0) {
+    groups.push({ items: cargoItems, label: 'Cargo', tone: 'cargo' })
+  }
+
+  return groups
+}
+
+function hasItemEquippedOrInCargo(game: GameState, itemId: ItemId): boolean {
+  const item = ITEMS[itemId]
+  return game.cargo[itemId] > 0 || Boolean(item.moduleSlot && game.ship.modules[item.moduleSlot] === itemId)
+}
+
+function formatRewards(rewards: Partial<Record<ItemId, number>>): string {
+  const entries = Object.entries(rewards)
+  if (entries.length === 0) return 'None'
+
+  return entries
+    .map(([itemId, amount]) => formatItemQuantity(itemId as ItemId, amount ?? 0))
+    .join(', ')
+}
+
+function formatModuleStats(stats: ModuleStats = {}): string {
+  const labels = [
+    ['damage', 'DMG'],
+    ['accuracy', 'ACC'],
+    ['shielding', 'SHD'],
+    ['armor', 'ARM'],
+    ['hull', 'HULL'],
+    ['speed', 'SPD'],
+    ['utility', 'UTIL'],
+  ] as const
+
+  const summary = labels
+    .filter(([key]) => stats[key])
+    .map(([key, label]) => `+${stats[key]} ${label}`)
+
+  return summary.length > 0 ? summary.join(' / ') : 'No stat bonus'
+}
+
+function formatCargoSourceTooltip(game: GameState, itemId: ItemId): string {
+  const item = ITEMS[itemId]
+  const sources: string[] = []
+  const activitySources = ACTIVITIES.filter((activity) => (activity.rewards[itemId] ?? 0) > 0)
+  const relayOrder = game.marketOrders.find((order) => order.itemId === itemId && order.quantity > 0)
+
+  if (activitySources.length > 0) {
+    sources.push(`Obtain from ${formatActivitySourceList(activitySources, itemId)}.`)
+  }
+
+  if (relayOrder) {
+    sources.push(`Trade Relay: ${relayOrder.quantity} available at ${relayOrder.unitPrice} Credits each.`)
+  }
+
+  return sources.length > 0 ? sources.join(' ') : `No current source listed. ${item.description}`
+}
+
+function formatActivitySourceList(activities: ActivityDefinition[], itemId: ItemId): string {
+  const entries = activities
+    .filter((activity) => (activity.rewards[itemId] ?? 0) > 0)
+    .slice(0, 4)
+    .map((activity) => `${activity.name} (${getSectorById(activity.sectorId).name})`)
+
+  if (activities.length > 4) {
+    entries.push(`+${activities.length - 4} more`)
+  }
+
+  return entries.join(', ')
+}
+
+function formatCargoUseTooltip(itemId: ItemId): string {
+  const item = ITEMS[itemId]
+  const uses: string[] = []
+
+  if (itemId === 'credits') {
+    uses.push('Spend on Trade Relay orders and sector unlocks.')
+  }
+
+  if (item.kind === 'module' && item.moduleSlot) {
+    uses.push(`Install in ${formatModuleSlot(item.moduleSlot)}: ${formatModuleStats(item.stats)}.`)
+  }
+
+  if (item.kind === 'repair' && item.repairAmount) {
+    uses.push(`Repair supply: restores ${item.repairAmount} hull manually or through auto-repair.`)
+  }
+
+  if (item.kind === 'ammo') {
+    uses.push(
+      item.ammoDamage
+        ? `Ammunition payload: adds ${item.ammoDamage} damage when consumed by combat missions.`
+        : 'Ammunition stockpile for combat loadouts.',
     )
-    return `${formatMap(activity.rewards)} + ${rarest.chance}% ${ITEMS[rarest.itemId].name}`
   }
 
-  return formatMap(activity.rewards)
+  const recipeUses = ACTIVITIES.filter((activity) => (activity.costs?.[itemId] ?? 0) > 0)
+  if (recipeUses.length > 0) {
+    uses.push(`Recipe input for ${formatActivityUseList(recipeUses)}.`)
+  }
+
+  const moduleRequirements = ACTIVITIES.filter((activity) => activity.requiredModule === itemId)
+  if (moduleRequirements.length > 0) {
+    uses.push(`Required module for ${formatActivityUseList(moduleRequirements)}.`)
+  }
+
+  const ammoRequirements = ACTIVITIES.filter((activity) => activity.combat?.requiredAmmo === itemId)
+  if (ammoRequirements.length > 0) {
+    uses.push(`Required ammo for ${formatActivityUseList(ammoRequirements)}.`)
+  }
+
+  if (item.tradable && itemId !== 'credits') {
+    uses.push(`Can be sold to the Trade Relay for ${Math.max(1, Math.floor(item.baseValue * 0.6))} Credits.`)
+  }
+
+  return uses.length > 0 ? uses.join(' ') : item.description
 }
 
-function formatActivityRisk(activity: ActivityDefinition, game: GameState) {
-  if (activity.cooking) {
-    return `${getBurnChance(activity, game)}% burn chance`
-  }
+function formatActivityUseList(activities: ActivityDefinition[]): string {
+  const names = activities.map((activity) => activity.name)
+  if (names.length <= 4) return names.join(', ')
 
-  if (activity.combat) {
-    const prefix = activity.combat.boss ? 'Boss: ' : ''
-    return `${prefix}${activity.combat.damageChance}% HP hit, ${activity.combat.minDamage}-${activity.combat.maxDamage} dmg`
-  }
-
-  return ''
+  return `${names.slice(0, 4).join(', ')} +${names.length - 4} more`
 }
 
-function shortAddress(address: string) {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`
+function getEventLogKind(entry: string): string {
+  const activity = ACTIVITIES.find((candidate) => entry.startsWith(`${candidate.name}:`))
+  if (activity) return activity.group.toLowerCase()
+
+  const normalized = entry.toLowerCase()
+  if (normalized.includes('hull failure') || normalized.includes('depleted') || normalized.includes('safety')) {
+    return 'danger'
+  }
+  if (normalized.includes('bought') || normalized.includes('sold') || normalized.includes('trade relay')) {
+    return 'market'
+  }
+  if (
+    normalized.includes('installed') ||
+    normalized.includes('removed') ||
+    normalized.includes('restored') ||
+    normalized.includes('ship routed') ||
+    normalized.includes('mission')
+  ) {
+    return 'ship'
+  }
+  return 'system'
 }
 
-function gameFromChainSnapshot(snapshot: ChainSnapshot, fallback: GameState): GameState {
-  return {
-    ...fallback,
-    skills: snapshot.skills,
-    inventory: snapshot.inventory,
-    equipment: snapshot.equipment,
-    marketOrders: snapshot.marketOrders,
-    currentHitpoints: snapshot.currentHitpoints,
-    currentAreaId: snapshot.currentAreaId,
-    unlockedAreaIds: snapshot.unlockedAreaIds,
-    active: snapshot.active,
+function loadGame(): GameState {
+  const fresh = createInitialState()
+  const raw = window.localStorage.getItem(STORAGE_KEY)
+  if (!raw) return fresh
+
+  try {
+    const parsed = JSON.parse(raw) as GameState
+    if (parsed.version !== 1 || !parsed.ship || !parsed.cargo || !parsed.skills) {
+      return fresh
+    }
+    return parsed
+  } catch {
+    return fresh
   }
-}
-
-function getChainPreview(
-  snapshot: ChainSnapshot,
-  activity: ActivityDefinition | null,
-  now: number,
-): ClaimPreview {
-  const cycleMs = activity?.cycleMs ?? 0
-  const elapsedMs = getChainElapsedMs(snapshot, activity, now)
-  const totalReadyCycles = getChainReadyCycles(snapshot, activity, now)
-  const claimableCycles = Math.min(totalReadyCycles, CHAIN_SETTLE_CYCLE_LIMIT)
-
-  return {
-    cycles: claimableCycles,
-    progressPct: cycleMs > 0 ? ((elapsedMs % cycleMs) / cycleMs) * 100 : 0,
-    elapsedMs,
-    cycleMs,
-    xp: {},
-    rewards: {},
-    costs: {},
-    burned: {},
-    rareDrops: {},
-    autoEaten: {},
-    hpRestored: 0,
-    hpLost: 0,
-    stoppedByHp: false,
-    stoppedBySafety: false,
-    deathPenalty: {
-      lostCrowns: 0,
-      lostEquipment: [],
-    },
-  }
-}
-
-function getChainReadyCycles(
-  snapshot: ChainSnapshot,
-  activity: ActivityDefinition | null,
-  now: number,
-) {
-  if (!snapshot.active || !activity || activity.cycleMs <= 0) {
-    return 0
-  }
-
-  return Math.floor(getChainElapsedMs(snapshot, activity, now) / activity.cycleMs)
-}
-
-function getChainElapsedMs(
-  snapshot: ChainSnapshot,
-  activity: ActivityDefinition | null,
-  now: number,
-) {
-  if (!snapshot.active || !activity || activity.cycleMs <= 0) {
-    return 0
-  }
-
-  const liveElapsedMs = Math.max(0, now - snapshot.active.lastClaimAt)
-  const snapshotElapsedMs = snapshot.pendingCycles * activity.cycleMs
-
-  return Math.min(AFK_CAP_MS, Math.max(liveElapsedMs, snapshotElapsedMs))
-}
-
-function formatReadyCycles(claimableCycles: number, totalReadyCycles: number) {
-  return totalReadyCycles > claimableCycles
-    ? `${claimableCycles}/${totalReadyCycles} ready`
-    : `${claimableCycles} ready`
-}
-
-function getChainStatus({
-  account,
-  chainAddress,
-  chainId,
-  chainLoading,
-  chainSnapshot,
-  isChainMode,
-}: {
-  account: Address | null
-  chainAddress: Address | null
-  chainId: string | null
-  chainLoading: boolean
-  chainSnapshot: ChainSnapshot | null
-  isChainMode: boolean
-}) {
-  if (!isChainMode) {
-    return 'MegaETH available'
-  }
-
-  if (!chainAddress) {
-    return 'No contract address'
-  }
-
-  if (!account) {
-    return 'Wallet needed'
-  }
-
-  if (chainId !== MEGAETH_CHAIN_ID_HEX) {
-    return 'Switch network'
-  }
-
-  if (chainLoading) {
-    return 'Reading chain'
-  }
-
-  if (!chainSnapshot) {
-    return 'Ready to read'
-  }
-
-  return chainSnapshot.hasProfile ? 'MegaETH connected' : 'Profile not minted'
-}
-
-function formatChainError(error: unknown): string {
-  const details = error as { shortMessage?: unknown; message?: unknown }
-  const message =
-    typeof details.shortMessage === 'string'
-      ? details.shortMessage
-      : typeof details.message === 'string'
-        ? details.message
-        : 'Chain request failed'
-
-  return message.split('\n')[0].slice(0, 110)
 }
 
 export default App

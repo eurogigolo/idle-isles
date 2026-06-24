@@ -7,7 +7,7 @@ const namespacedIdPattern = new RegExp(`^${escapeRegExp(namespace)}:[a-z][A-Za-z
 
 let failed = false
 
-validateEntries('areas', registry.areas)
+validateEntries('sectors', registry.sectors)
 validateEntries('items', registry.items)
 validateEntries('activities', registry.activities)
 validateReferences()
@@ -16,10 +16,10 @@ if (failed) {
   process.exitCode = 1
 } else {
   const total =
-    registry.areas.length + registry.items.length + registry.activities.length
+    registry.sectors.length + registry.items.length + registry.activities.length
   console.log(
     `content IDs: ${total} entries checked ` +
-      `(${registry.areas.length} areas, ${registry.items.length} items, ` +
+      `(${registry.sectors.length} sectors, ${registry.items.length} items, ` +
       `${registry.activities.length} activities)`,
   )
 }
@@ -62,20 +62,20 @@ function validateEntries(sectionName, entries) {
 
 function validateReferences() {
   const itemIds = new Set(registry.items.map((item) => item.id))
-  const areaIds = new Set(registry.areas.map((area) => area.id))
+  const sectorIds = new Set(registry.sectors.map((sector) => sector.id))
 
-  for (const area of registry.areas) {
-    if (area.passageCostItem && !itemIds.has(area.passageCostItem)) {
-      fail(`${area.id}: passageCostItem "${area.passageCostItem}" is missing`)
+  for (const sector of registry.sectors) {
+    if (sector.unlockCostItem && !itemIds.has(sector.unlockCostItem)) {
+      fail(`${sector.id}: unlockCostItem "${sector.unlockCostItem}" is missing`)
     }
   }
 
   for (const activity of registry.activities) {
-    if (!areaIds.has(activity.areaId)) {
-      fail(`${activity.id}: areaId "${activity.areaId}" is missing`)
+    if (!sectorIds.has(activity.sectorId)) {
+      fail(`${activity.id}: sectorId "${activity.sectorId}" is missing`)
     }
 
-    if (!['combat', 'gather', 'artisan'].includes(activity.kind)) {
+    if (!['combat', 'gathering', 'production'].includes(activity.kind)) {
       fail(`${activity.id}: invalid kind "${activity.kind}"`)
     }
   }

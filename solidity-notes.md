@@ -4,7 +4,7 @@ This file tracks every gameplay change that must be reflected onchain. The front
 
 ## Current Contract Gap
 
-`contracts/IdleIsles.sol` now has the lazy combat settlement foundation, death penalties, slot-based equipment, auto-settle session preferences, marketplace cancellation, starter gather/artisan paths, starter fishing/cooking, and authoritative Starter Area/Outer Isles travel. Static item/combat lookup content has been split into immutable `IdleIslesContent` through `IIdleIslesContent` so the stateful core has room to grow. The content contract now also includes the expanded combat definitions for Goblin Forager, Giant Spider, Dire Wolf, and Venomous Drake, plus item slot/stat definitions for Crafting light armor and the legs equipment slot. The system is still not fully content-complete with `src/game.ts`; higher-tier gather, Crafting settlement, full artisan parity, full cooking, and the Realm Scavenger floor still need to be ported before a serious testnet build.
+`contracts/IdleIsles.sol` now has the lazy combat settlement foundation, death penalties, slot-based equipment, auto-settle session preferences, content-driven gather/fishing/mining source routes, generic packed artisan settlement, cooking, and authoritative Starter Area/Outer Isles travel. Static item, combat, drop, healing, equipment, Gather, and Artisan lookup content has been split into immutable `IdleIslesContent` through `IIdleIslesContent` so the stateful core has room to grow. Hoard Hall marketplace order state and escrow now live in `contracts/HoardHall.sol` instead of the core. The content contract now includes expanded combat definitions for Goblin Forager, Giant Spider, Dire Wolf, and Venomous Drake, item slot/stat definitions for Crafting light armor and the legs equipment slot, registered Gather routes from activity ID 201 through 217, and registered Artisan recipes from activity ID 301 through 339. The system is still not fully content-complete with `src/game.ts`; the Realm Scavenger floor, market indexing, and broader high-tier parity tests still need to be ported before a serious testnet build.
 
 The frontend now has area routing for Idle Isles in both local and Chain mode. Profiles start in the Starter Area, and the Harbor Merchant can unlock Outer Isles travel for 50,000 Crowns. Chain mode stores current/unlocked areas, burns Crowns for first passage, stops active tasks on travel, and blocks Outer Isles activities until the player has unlocked and selected that area.
 
@@ -12,16 +12,16 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 
 ## Implemented Contract Foundation
 
-- Lazy settlement exists through `claim`, `startCombat`, `eatFood`, `equip`, `unequip`, marketplace listing, and marketplace buying.
-- Starter non-combat settlement now exists through `startGather` and `startArtisan`.
+- Lazy settlement exists through `claim`, `startCombat`, `eatFood`, `equip`, and `unequip`. Marketplace listing and buying no longer settle pending gameplay automatically because Hoard Hall is separated from the core.
+- Non-combat settlement now exists through content-driven `startGather` and generic `startArtisan`.
 - XP awards use `XP_RATE_MULTIPLIER = 2`; listed activity XP is base XP before the multiplier.
-- The first onchain gather action is Ash Grove (`ACTIVITY_ASH_GROVE = 201`): 5 second cycles, 18 base Woodcutting XP, and 2 Ash Logs.
-- The first onchain artisan action is Wood Armory (`ACTIVITY_WOOD_ARMORY = 301`): 6 second cycles, 16 base Smithing XP, costs 3 Ash Logs, and creates Wood Club, Bark Shield, and Bark Vest.
-- The first T2 mining actions are Copper Ridge (`ACTIVITY_COPPER_RIDGE = 202`) and Tin Hollow (`ACTIVITY_TIN_HOLLOW = 203`): 7 second cycles, 20 base Mining XP, and 2 ore per cycle.
-- The first T2 artisan actions are Copper Smelter (`ACTIVITY_COPPER_SMELTER = 302`) and Copper Dagger (`ACTIVITY_COPPER_DAGGER = 303`). Copper Smelter costs Copper Ore, Tin Ore, and Ash Log for Copper Bar. Copper Dagger requires Smithing level 4 and costs 3 Copper Bars plus 2 Ash Logs.
-- The first fishing action is River Bend (`ACTIVITY_RIVER_BEND = 204`): 6 second cycles, 20 base Fishing XP, and 2 Raw Minnow.
-- The first cooking action is Cook Minnow (`ACTIVITY_COOK_MINNOW = 304`): 4 second cycles, 14 base Cooking XP per attempt, costs 1 Raw Minnow, and mints Cooked Minnow only when the burn roll succeeds.
-- Cook Minnow burn chance is `max(0, 3500 - (cookingLevel - 1) * 300)` basis points. Burned Raw Minnow disappears permanently.
+- Gather routes from Ash Grove through Tungsten Lode (`ACTIVITY_ASH_GROVE = 201` through `ACTIVITY_TUNGSTEN_LODE = 217`) are registered in a packed content table. `startGather` validates the packed skill requirement and area, then settlement grants packed XP and mints the packed source output.
+- Artisan recipes from Wood Armory through Cook Leviathan (`ACTIVITY_WOOD_ARMORY = 301` through `ACTIVITY_COOK_LEVIATHAN = 339`) are registered in a packed content table. `startArtisan` validates the packed skill requirement and materials, then settlement burns up to three packed costs and mints up to three packed rewards.
+- Copper Ridge (`ACTIVITY_COPPER_RIDGE = 202`) and Tin Hollow (`ACTIVITY_TIN_HOLLOW = 203`) preserve the existing 7 second onchain cycle timing.
+- T2 artisan actions include Copper Smelter (`ACTIVITY_COPPER_SMELTER = 302`), Copper Dagger (`ACTIVITY_COPPER_DAGGER = 303`), Bark Leggings (`ACTIVITY_BARK_LEGGINGS = 305`), Copper Armor (`ACTIVITY_COPPER_ARMOR = 307`), Copper Legs (`ACTIVITY_COPPER_LEGS = 308`), and starter Crafting recipes beginning at Craft Leather Cowl (`ACTIVITY_LEATHER_COWL = 320`).
+- Fishing routes from River Bend through Abyssal Pool are registered onchain, so Cook Minnow through Cook Leviathan now have matching raw fish source routes.
+- Cooking recipes are handled by the same packed artisan settlement path. Cook Minnow (`ACTIVITY_COOK_MINNOW = 304`) through Cook Leviathan (`ACTIVITY_COOK_LEVIATHAN = 339`) burn the raw fish cost per attempt and mint cooked fish only when the burn roll succeeds.
+- Cooking burn chance is `max(minBurnChanceBps, burnChanceBps - (cookingLevel - 1) * burnReductionBpsPerLevel)` basis points. Burned raw fish disappears permanently.
 - Pending combat is resolved cycle by cycle.
 - Fatal cycles do not grant rewards or XP.
 - Death clears equipped gear and burns half of Crowns.
@@ -31,16 +31,16 @@ Community-created content is not implemented onchain yet. Treat it as a major pr
 - The contract does not currently inherit an admin/owner role. `Ownable` was removed because no owner-only production behavior exists and bytecode size is a hard constraint.
 - Revert strings were replaced with Solidity custom errors to reduce deployed bytecode while keeping guard failures typed and explicit.
 - Item and activity constants are internal, with numeric IDs documented in this file and the technical breakdown, to avoid public getter bytecode for every content constant.
-- Static item/combat content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
-- Current compiled bytecode after tying Stop HP to auto-eat: `IdleIsles` is 24,092 deployed bytes and `IdleIslesContent` is 5,963 deployed bytes. The 19-test Hardhat suite passes against the two-contract deployment shape.
+- Static item, combat, drop, healing, and artisan recipe content is now split toward `IdleIslesContent`, an ownerless pure lookup contract referenced by the core. This avoids production admin powers while creating bytecode room for future content.
+- Current compiled bytecode after extracting Hoard Hall, splitting settlement caps, and adding content-driven Gather settlement: `IdleIsles` is 22,759 deployed bytes, `IdleIslesContent` is 10,762 deployed bytes, and `HoardHall` is 3,500 deployed bytes. The 25-test Hardhat suite passes against the three-contract deployment shape.
 - `npm run bytecode:contracts` enforces a 24,200-byte project budget for `IdleIsles`, below the 24,576-byte EIP-170 deployed bytecode limit.
 - Core area, item, and activity IDs are now recorded in `content/core/ids.json` and checked by `npm run content:check`. The registry generates frontend chain mappings in `src/generated/contentIds.ts`, but it is not yet the full gameplay or Solidity source of truth.
 - Auto-settle session preferences exist through `configureAutoSettle`.
 - Authorized operators can call `settleFor`.
 - Session safety can auto-eat configured cooked food before continuing combat; the HP stop threshold is active only while auto-eat is enabled.
 - The frontend local simulation now mirrors this UX with persisted combat safety settings: auto-eat, selected food, stop-at HP, and max food per claim.
-- Optimized Hardhat builds use Solidity 0.8.28 with 1 optimizer run so the current core/content contract pair deploys under the EVM bytecode size limit. Bytecode budget is tight, so new activity slices currently use direct compact branches rather than a broad generic content table.
-- Hardhat 3 + viem tests now cover level thresholds, profile creation, basic combat settlement, auto-settle HP safety stops, marketplace escrow/fill, and marketplace cancellation.
+- Optimized Hardhat builds use Solidity 0.8.28 with 1 optimizer run so the current core/content contract pair deploys under the EVM bytecode size limit. Bytecode budget is tight, so Artisan recipes use a generated-style packed lookup table in `IdleIslesContent` rather than branch-heavy settlement logic in `IdleIsles`.
+- Hardhat 3 + viem tests now cover level thresholds, profile creation, basic combat settlement, auto-settle HP safety stops, Hoard Hall escrow/fill, Hoard Hall cancellation, packed Gather and Artisan decoding, expanded Gather settlement, expanded Smithing, and expanded Crafting.
 
 ## Required Contract Updates
 
@@ -214,23 +214,9 @@ The contract needs activity definitions matching the frontend:
 
 Gather:
 
-- Ash Grove: implemented onchain as the first starter gather action.
-- Pine Stand
-- Oakwood
-- Ironbark Trees
-- Elderwood Grove
-- Spiritwood Grove
-- River Bend
-- Lake Dock
-- Coastal Net
-- Deepwater Line
-- Storm Pier
-- Abyssal Pool
-- Copper Ridge: implemented onchain as first T2 mining action.
-- Tin Hollow: implemented onchain as first T2 mining action.
-- Iron Vein
-- Coal Cut
-- Tungsten Lode
+- Ash Grove through Tungsten Lode are implemented onchain through the packed Gather table.
+- Starter Area source routes: Ash Grove, Pine Stand, Oakwood, River Bend, Lake Dock, Copper Ridge, Tin Hollow, and Iron Vein.
+- Outer Isles source routes: Ironbark Trees, Elderwood Grove, Spiritwood Grove, Coastal Net, Deepwater Line, Storm Pier, Abyssal Pool, Coal Cut, and Tungsten Lode.
 
 Combat:
 
@@ -248,7 +234,8 @@ Combat:
 
 Artisan:
 
-- Wood Armory: implemented onchain as the first starter artisan action and legitimate no-admin path to T1 gear.
+- All recipes in this list are registered onchain in `IdleIslesContent` activity IDs 301-339 and settle through the generic packed Artisan path. Some high-tier recipes are material-gated until matching gather/fishing sources are ported.
+- Wood Armory: implemented onchain as the starter artisan action and legitimate no-admin path to T1 gear.
 - Bark Leggings
 - Copper Smelter: implemented onchain as first T2 bar recipe.
 - Iron Smelter
@@ -290,19 +277,15 @@ Artisan:
 
 ### Activity Data Model
 
-The current `ActivityDef` only supports one cost item and one reward item. That is no longer enough.
+The onchain Artisan model now supports compact multi-cost and multi-reward recipes through packed words returned by `IdleIslesContent.getArtisanActivity`.
 
-Needed:
+Current packed Artisan recipe shape:
 
-- Multiple cost items.
-- Multiple reward items.
-- Multiple XP outputs.
-- Required equipment item or required equipment tier.
-- Combat rules.
-- Cooking rules.
-- Optional boss/drop table support later.
+- `config`: cycle seconds, primary skill, required level, base XP, optional cooked item, and optional cooking burn parameters.
+- `costs`: up to three packed item/amount pairs.
+- `rewards`: up to three packed item/amount pairs.
 
-Consider using compact fixed arrays for alpha, for example:
+The older general-purpose model below is still useful as a future source schema for generated content, tests, and docs:
 
 ```solidity
 struct ItemAmount {
@@ -322,7 +305,7 @@ struct ActivityDef {
 }
 ```
 
-If dynamic arrays are too expensive or awkward for pure definitions, use storage-configured activities or hardcoded helper functions per activity.
+If dynamic arrays are too expensive or awkward for pure definitions, generate the packed lookup data used by the current contract pair.
 
 ### Cooking
 
@@ -335,7 +318,7 @@ If dynamic arrays are too expensive or awkward for pure definitions, use storage
 - Burn chance must decrease as Cooking level increases.
 - Add `eatFood(itemId)` or equivalent.
 - Add events for cooked and burned outputs.
-- Add higher-tier cooking recipes for Cod, Tuna, Manta, and Leviathan.
+- Higher-tier cooking recipes for Trout, Cod, Tuna, Manta, and Leviathan are registered onchain. Their raw fish inputs still need matching onchain fishing sources.
 - Higher-tier fish must require higher Cooking levels and heal more HP.
 
 Current frontend burn formula:
@@ -431,18 +414,19 @@ Current frontend local simulation supports:
 - Player cancellation that returns remaining escrowed inventory.
 - Category filters by resource, material, food, equipment, and rare item.
 
-Current contract supports listing, buying, and cancellation, but still needs:
+`HoardHall` supports listing, buying, and cancellation outside the core game contract. It still needs:
 
 - Support all new ERC-1155 item IDs.
 - A Realm Scavenger buy-floor function or equivalent protocol design.
 - Clear behavior for partially filled orders.
 - Optional marketplace fee/tax.
 - Additional tests for partial fill and invalid orders.
-- Frontend Chain mode now reads a bounded set of recent open orders and can submit list, buy, and cancel transactions. This should eventually move to event-indexed reads for larger markets.
+- Frontend Chain mode now reads a bounded set of recent open orders from `HoardHall` and can submit list, buy, and cancel transactions. This should eventually move to event-indexed reads for larger markets.
+- Listing or buying through Hoard Hall requires the player to approve `HoardHall` as an ERC-1155 operator for the `IdleIsles` token contract. The frontend handles the first approval before the market transaction.
 
 Contract marketplace parity requirements:
 
-- Listing must escrow ERC-1155 item quantity in the contract.
+- Listing must escrow ERC-1155 item quantity in the `HoardHall` contract.
 - Buying must transfer exactly the filled quantity and decrement remaining quantity.
 - Cancelling must be restricted to the seller and return the remaining escrowed quantity.
 - Listed equipment must not be usable, equippable, or transferable while escrowed.
@@ -786,11 +770,14 @@ Implemented tests:
 - Profile creation initializes HP and starter Crowns.
 - One Training Yard cycle grants expected XP and rewards.
 - Auto-settle HP safety stop clears combat without death loss.
-- Marketplace listing escrows items.
-- Marketplace buying transfers item escrow to buyer and Crowns to seller.
-- Marketplace cancellation returns escrowed items.
+- Hoard Hall listing escrows items after ERC-1155 approval.
+- Hoard Hall buying transfers item escrow to buyer and Crowns to seller after ERC-1155 approval.
+- Hoard Hall cancellation returns escrowed items.
 - Ash Grove gathering mints Ash Logs and Woodcutting XP.
 - Wood Armory crafting burns Ash Logs, mints T1 gear, and grants Smithing XP.
+- Packed Artisan content decoding exposes the expected skill, requirement, costs, and rewards for expanded recipes.
+- Bark Leggings can be crafted through the expanded Smithing recipe table after reaching Smithing level 2.
+- Craft Leather Cowl can be crafted through the expanded Crafting recipe table.
 - Copper Ridge and Tin Hollow mint Copper/Tin Ore and Mining XP.
 - Copper Smelter burns Copper Ore, Tin Ore, and Ash Log to mint Copper Bar.
 - Copper Dagger can be crafted through the no-admin gameplay path after reaching Smithing level 4.

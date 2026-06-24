@@ -1,28 +1,38 @@
 {
   "network": "megaethTestnet",
   "chainId": 6343,
-  "deployedAt": "2026-06-21T16:25:04.367Z",
+  "deployedAt": "2026-06-21T22:46:52.362Z",
   "deployer": "0x4cb9b2fde8bb73e82dd343bc256c5dae96786ff7",
   "metadataUri": "ipfs://idle-isles/{id}.json",
   "contracts": {
     "IdleIslesContent": {
-      "address": "0x4241855B8e60763cDa332a66C741958B9D06681D",
-      "transactionHash": "0x83b0ddbf36a6836b71280043190a59a44a18e2ba74f2487afc22b7d5f51530c7",
-      "blockNumber": "22348648",
-      "gasUsed": "61966143"
+      "address": "0x279cdC09954d7359e829a6fd1d95849984f7Ebc5",
+      "transactionHash": "0x2450f1f3071f530201e1dee46ce01685db3a20d08745a3ce9d5c93f7c5503387",
+      "blockNumber": "22371556",
+      "gasUsed": "111265336"
     },
     "IdleIsles": {
-      "address": "0x514b296Ac7958F8A2Bfd2091d5Db8c46E6C4050E",
-      "transactionHash": "0xe2097d719464b76cc85a2ba37b64f8df6a66ef8e3e66222a1cf2d92a9c809ead",
-      "blockNumber": "22348649",
-      "gasUsed": "250103397",
+      "address": "0xD22C56025D10E736651e3Ea505095f55cf0e96E3",
+      "transactionHash": "0x8f14f4dd8315b197bfa1f1c7f64ae222147448814e975003542f6c78d11e4737",
+      "blockNumber": "22371557",
+      "gasUsed": "236367502",
       "constructorArgs": [
         "ipfs://idle-isles/{id}.json",
-        "0x4241855B8e60763cDa332a66C741958B9D06681D"
+        "0x279cdC09954d7359e829a6fd1d95849984f7Ebc5"
+      ]
+    },
+    "HoardHall": {
+      "address": "0xd09d503bC1d944FE7EdbAa761DAD08F8B1E50b6d",
+      "transactionHash": "0xa3029433d475f823c9c7048cad2de980ec1c445a01b84aeead69817923602785",
+      "blockNumber": "22371557",
+      "gasUsed": "36471478",
+      "constructorArgs": [
+        "0xD22C56025D10E736651e3Ea505095f55cf0e96E3"
       ]
     }
   },
   "frontendEnv": {
-    "VITE_IDLE_ISLES_ADDRESS": "0x514b296Ac7958F8A2Bfd2091d5Db8c46E6C4050E"
+    "VITE_IDLE_ISLES_ADDRESS": "0xD22C56025D10E736651e3Ea505095f55cf0e96E3",
+    "VITE_HOARD_HALL_ADDRESS": "0xd09d503bC1d944FE7EdbAa761DAD08F8B1E50b6d"
   }
 }

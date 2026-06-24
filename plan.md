@@ -9,16 +9,16 @@ As of the latest implementation pass:
 - Local React simulation includes tiered gather/combat/artisan content, cooking, equipment, hitpoints, combat safety, local inventory, a local Hoard Hall, and area-based activity routing.
 - Players start in the Starter Area and can buy a 50,000 Crown ship ride from the Harbor Merchant to unlock Outer Isles content. Chain mode now stores current/unlocked areas and burns Crowns for ship passage.
 - The project is branded as Idle Isles across app UI, package metadata, contracts, tests, docs, and metadata/storage slugs.
-- Contract architecture is split into `IdleIsles` for state/settlement and immutable `IdleIslesContent` for static item/combat lookups.
-- Onchain gameplay currently supports profile creation, area travel, combat settlement, equipment burn/remint, death penalties, marketplace list/buy/cancel, Ash Grove, Copper Ridge, Tin Hollow, River Bend, Wood Armory, Copper Smelter, Copper Dagger, and Cook Minnow.
-- Starter food loop is onchain: Raw Minnow can be fished, Cook Minnow can burn or produce Cooked Minnow, raw fish cannot heal, Cooked Minnow heals, and combat auto-eat can consume gameplay-created food.
+- Contract architecture is split into `IdleIsles` for state/settlement, immutable `IdleIslesContent` for static lookup data, and `HoardHall` for marketplace escrow/orders.
+- Onchain gameplay currently supports profile creation, area travel, combat settlement, equipment burn/remint, death penalties, content-driven Gather settlement for registered source routes 201-217, and generic packed Artisan settlement for registered recipes 301-339. Marketplace list/buy/cancel now lives in the separate Hoard Hall contract.
+- Food loops are onchain for registered fish tiers: raw fish sources can be gathered, Cooking recipes can burn or produce cooked food, raw fish cannot heal, cooked fish heals, and combat auto-eat can consume gameplay-created food.
 - Verification commands currently pass through `npm.cmd run verify`, including linting, audit, content ID validation, Solidity build, bytecode budget checks, contract tests, and frontend build.
-- Contract tests currently pass at 19 Node test-runner tests.
-- Deployed bytecode measures 24,092 bytes for `IdleIsles` and 5,963 bytes for `IdleIslesContent`; `IdleIsles` is capped by a 24,200-byte project budget in CI.
-- Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS`, for profile reads, balances, area travel, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
-- MegaETH deployment config and `npm run deploy:megaeth` now deploy `IdleIslesContent` followed by `IdleIsles`, then write `deployments/megaeth-testnet.json` with the frontend contract address.
+- Contract tests currently pass at 25 Node test-runner tests.
+- Deployed bytecode measures 22,759 bytes for `IdleIsles`, 10,762 bytes for `IdleIslesContent`, and 3,500 bytes for `HoardHall`; `IdleIsles` is capped by a 24,200-byte project budget in CI.
+- Frontend now has an opt-in Chain mode, configured by `VITE_IDLE_ISLES_ADDRESS` and `VITE_HOARD_HALL_ADDRESS`, for profile reads, balances, area travel, `createProfile`, `startGather`, `startArtisan`, `startCombat`, `claim`, `equip`, `unequip`, `eatFood`, bounded marketplace order reads, listing, buying, and cancellation. Local simulation remains the default dev/play mode.
+- MegaETH deployment config and `npm run deploy:megaeth` now deploy `IdleIslesContent`, `IdleIsles`, and `HoardHall`, then write `deployments/megaeth-testnet.json` with both frontend contract addresses.
 
-Recommended next build step: extract core gameplay content into structured data and generate TypeScript/chain/test fixtures before adding more contract settlement branches.
+Recommended next build step: generate the packed Gather/Artisan tables from structured content, broaden end-to-end parity tests for high-tier local loops, and keep new market behavior in `HoardHall` instead of the core.
 
 ## 1. Core Gameplay Goals
 
