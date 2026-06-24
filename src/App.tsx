@@ -112,6 +112,8 @@ const CHAIN_CLAIM_CYCLE_CAP: Record<ActivityGroup, number> = {
   Combat: 200,
 }
 const MOSS_MAX_CLAIM_BATCH_CALLS = 5
+const MOSS_GAMEPLAY_SESSION_TOOLTIP =
+  'Allows MOSS to submit approved game actions for 24 hours without repeated popups: mission actions, repairs, combat settings, sector travel, and Trade Relay listings. First-time Trade Relay escrow approval may still ask for confirmation.'
 
 function App() {
   const [game, setGame] = useState<GameState>(() => loadGame())
@@ -722,13 +724,16 @@ function App() {
           )}
           {chainMode && walletMode === 'moss' && (
             <button
-              className={mossSessionReady ? 'selected' : ''}
+              aria-label={MOSS_GAMEPLAY_SESSION_TOOLTIP}
+              className={mossSessionReady ? 'selected tooltip-button' : 'tooltip-button'}
+              data-tooltip={MOSS_GAMEPLAY_SESSION_TOOLTIP}
               disabled={chainBusy || !chainAccount || !mossReady}
               onClick={() => void enableMossGameplaySession()}
+              title={MOSS_GAMEPLAY_SESSION_TOOLTIP}
               type="button"
             >
               <Sparkles size={16} />
-              {mossSessionReady ? 'Session Ready' : 'Gameplay Session'}
+              {mossSessionReady ? 'Session Ready' : 'Enable Gameplay Session'}
             </button>
           )}
           {chainMode && chainAccount && !chainHasProfile && (

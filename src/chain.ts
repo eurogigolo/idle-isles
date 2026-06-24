@@ -181,6 +181,10 @@ export const MOSS_GAMEPLAY_CALLS = [
   'setCombatSettings(bool,uint16,uint256,uint16)',
 ] as const
 
+export const MOSS_TRADE_RELAY_GAMEPLAY_CALLS = [
+  'createOrder(uint256,uint64,uint128)',
+] as const
+
 export function getIdleGalacticaAddress(): Address | null {
   return readAddress('VITE_IDLE_GALACTICA_ADDRESS')
 }
@@ -232,8 +236,9 @@ export async function openMossDeposit(): Promise<void> {
 }
 
 export async function hasMossGameplaySession(account?: Address | null): Promise<boolean> {
-  const address = getIdleGalacticaAddress()
-  if (!address) return false
+  const gameAddress = getIdleGalacticaAddress()
+  const tradeRelayAddress = getTradeRelayAddress()
+  if (!gameAddress || !tradeRelayAddress) return false
 
   await initialiseMossWallet()
   const permissions = await mega.getPermissions(account ?? undefined)
@@ -243,12 +248,12 @@ export async function hasMossGameplaySession(account?: Address | null): Promise<
   if (!grant || grant.expiry <= expiresSoon) return false
 
   const calls = grant.permissions.calls
-  const gameAddress = address.toLowerCase()
+  const requiredCalls = getMossGameplayPermissionCalls(gameAddress, tradeRelayAddress)
 
-  return MOSS_GAMEPLAY_CALLS.every((signature) =>
+  return requiredCalls.every(({ to, signature }) =>
     calls.some(
       (call) =>
-        call.to.toLowerCase() === gameAddress &&
+        call.to.toLowerCase() === to.toLowerCase() &&
         call.signature.toLowerCase() === signature.toLowerCase(),
     ),
   )
@@ -510,7 +515,7 @@ export async function writeMossCombatSettings(settings: CombatSettings): Promise
 }
 
 export async function writeMossTravelToSector(sectorId: SectorId): Promise<Hash> {
-  return writeMossGameContract('travelToSector', [getContractSectorId(sectorId)], { silent: false })
+  return writeMossGameContract('travelToSector', [getContractSectorId(sectorId)])
 }
 
 export async function writeBuyTradeRelayOrder(orderId: string): Promise<Hash> {
@@ -762,7 +767,7 @@ async function writeMossTradeRelayContract(
     abi: TRADE_RELAY_ABI,
     functionName,
     args: [...args],
-    silent: false,
+    silent: true,
   })
 }
 
@@ -984,18 +989,32 @@ function requireTradeRelayAddress(): Address {
 }
 
 function createMossGameplayPermission(): Permission {
-  const address = requireIdleGalacticaAddress()
+  const gameAddress = requireIdleGalacticaAddress()
+  const tradeRelayAddress = requireTradeRelayAddress()
 
   return {
     expiry: Math.floor(Date.now() / 1000) + MOSS_GAMEPLAY_SESSION_SECONDS,
     permissions: {
-      calls: MOSS_GAMEPLAY_CALLS.map((signature) => ({
-        to: address,
-        signature,
-      })),
+      calls: getMossGameplayPermissionCalls(gameAddress, tradeRelayAddress),
       spend: [],
     },
   }
+}
+
+function getMossGameplayPermissionCalls(
+  gameAddress: Address,
+  tradeRelayAddress: Address,
+): Array<{ to: Address; signature: string }> {
+  return [
+    ...MOSS_GAMEPLAY_CALLS.map((signature) => ({
+      to: gameAddress,
+      signature,
+    })),
+    ...MOSS_TRADE_RELAY_GAMEPLAY_CALLS.map((signature) => ({
+      to: tradeRelayAddress,
+      signature,
+    })),
+  ]
 }
 
 function requireMossTransaction(result: TransactionResult): Hash {
