@@ -446,7 +446,7 @@ export async function writeCombatSettings(settings: CombatSettings): Promise<Has
 }
 
 export async function writeMossCreateProfile(): Promise<Hash> {
-  return writeMossGameContract('createProfile', [])
+  return writeMossGameContract('createProfile', [], { silent: false })
 }
 
 export async function writeMossStartMission(activityId: ActivityId): Promise<Hash> {
@@ -807,16 +807,47 @@ async function callMossContract({
   silent: boolean
 }): Promise<Hash> {
   await initialiseMossWallet()
-  const result = await mega.callContract({
+  const request = {
     address,
     abi,
     functionName,
     args,
     silent,
     silentUIApproveFallback: silent,
-  })
+  }
 
-  return requireMossTransaction(result)
+  try {
+    const result = await mega.callContract(request)
+    return requireMossTransaction(result)
+  } catch (error) {
+    if (!silent || !isRecoverableMossSilentError(error)) {
+      throw error
+    }
+
+    const result = await mega.callContract({
+      address,
+      abi,
+      functionName,
+      args,
+      silent: false,
+      silentUIApproveFallback: false,
+    })
+    return requireMossTransaction(result)
+  }
+}
+
+function isRecoverableMossSilentError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error)
+  const normalized = message.toLowerCase()
+
+  return [
+    'intent signature is invalid',
+    'preflight failed',
+    'wallet_sendcalls',
+    'permission',
+    'session',
+    'silent',
+  ].some((fragment) => normalized.includes(fragment))
 }
 
 async function getBrowserClients(preferredAccount?: Address): Promise<BrowserClients> {
