@@ -1297,6 +1297,7 @@ select {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(14.5rem, 1fr));
   gap: 0.5rem;
+  overflow: visible;
   padding: 0 0.55rem 0.55rem;
 }
 
@@ -1314,6 +1315,8 @@ select {
   --mission-accent: #6ec6ff;
   --mission-accent-soft: rgba(110, 198, 255, 0.1);
   --mission-accent-faint: rgba(110, 198, 255, 0.04);
+  position: relative;
+  z-index: 0;
   display: grid;
   gap: 0.48rem;
   padding: 0.55rem;
@@ -1353,6 +1356,11 @@ select {
     rgba(255, 255, 255, 0.038);
   box-shadow: 0 0 18px color-mix(in srgb, var(--mission-accent) 18%, transparent);
   transform: translateY(-1px);
+  z-index: 20;
+}
+
+.mission-card:focus-within {
+  z-index: 20;
 }
 
 .mission-card.running {
