@@ -106,6 +106,12 @@ const SKILL_ICONS: Record<SkillId, typeof Activity> = {
 const REPAIR_ITEMS = (Object.keys(ITEMS) as ItemId[]).filter(
   (itemId) => ITEMS[itemId].kind === 'repair',
 )
+const CHAIN_CLAIM_CYCLE_CAP: Record<ActivityGroup, number> = {
+  Gathering: 1000,
+  Production: 1000,
+  Combat: 200,
+}
+const MOSS_MAX_CLAIM_BATCH_CALLS = 5
 
 function App() {
   const [game, setGame] = useState<GameState>(() => loadGame())
@@ -179,6 +185,8 @@ function App() {
 
   const activeActivity = game.activeMission ? getActivityById(game.activeMission.activityId) : null
   const preview = useMemo(() => getClaimPreview(game, now), [game, now])
+  const claimBatchCount =
+    chainMode && walletMode === 'moss' ? getMossClaimBatchCount(activeActivity, preview.cycles) : 1
   const sector = getSectorById(game.currentSectorId)
   const selectedSkillFilter = selectedSkillFilters[selectedGroup]
   const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
@@ -345,9 +353,11 @@ function App() {
       void runChainAction(
         async () => {
           const chain = await loadChain()
-          return walletMode === 'moss' ? chain.writeMossClaimMission() : chain.writeClaimMission()
+          return walletMode === 'moss'
+            ? chain.writeMossClaimMissionBatch(claimBatchCount)
+            : chain.writeClaimMission()
         },
-        'Mission cycles claimed.',
+        claimBatchCount > 1 ? `Submitted ${claimBatchCount} claim batches.` : 'Mission cycles claimed.',
       )
       return
     }
@@ -709,7 +719,7 @@ function App() {
                   onClick={handleClaimMission}
                   type="button"
                 >
-                  Claim {preview.cycles > 0 ? `(${preview.cycles})` : ''}
+                  Claim {formatClaimButtonSuffix(preview.cycles, claimBatchCount)}
                 </button>
                 <button
                   aria-label="Stop mission"
@@ -982,6 +992,18 @@ function StatPill({ icon: Icon, label, value }: StatPillProps) {
 
 function formatAddress(address: Address): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`
+}
+
+function getMossClaimBatchCount(activity: ActivityDefinition | null, pendingCycles: number): number {
+  if (!activity || pendingCycles <= 0) return 1
+
+  const claimCap = CHAIN_CLAIM_CYCLE_CAP[activity.group]
+  return Math.max(1, Math.min(MOSS_MAX_CLAIM_BATCH_CALLS, Math.ceil(pendingCycles / claimCap)))
+}
+
+function formatClaimButtonSuffix(pendingCycles: number, claimBatchCount: number): string {
+  if (pendingCycles <= 0) return ''
+  return claimBatchCount > 1 ? `x${claimBatchCount} (${pendingCycles})` : `(${pendingCycles})`
 }
 
 interface PanelTitleProps {

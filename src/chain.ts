@@ -85,6 +85,7 @@ const MARKET_READ_LIMIT = 120n
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
 const MOSS_MAX_GAS_ALLOWANCE = parseEther('0.00004')
+export const MOSS_MAX_CLAIM_BATCH_CALLS = 5
 
 export const MEGAETH_TESTNET_PARAMS = {
   chainId: MEGAETH_CHAIN_ID_HEX,
@@ -468,6 +469,21 @@ export async function writeMossClaimMission(): Promise<Hash> {
   return writeMossGameContract('claimMission', [])
 }
 
+export async function writeMossClaimMissionBatch(count: number): Promise<Hash> {
+  const safeCount = Math.max(1, Math.min(MOSS_MAX_CLAIM_BATCH_CALLS, Math.floor(count)))
+  if (safeCount === 1) return writeMossClaimMission()
+
+  return callMossContractBatch(
+    Array.from({ length: safeCount }, () => ({
+      address: requireIdleGalacticaAddress(),
+      abi: IDLE_GALACTICA_ABI,
+      functionName: 'claimMission',
+      args: [],
+    })),
+    true,
+  )
+}
+
 export async function writeMossStopMission(): Promise<Hash> {
   return writeMossGameContract('stopMission', [])
 }
@@ -849,6 +865,57 @@ async function callMossVisibleContract(
     silent: false,
     silentUIApproveFallback: false,
   })
+  return requireMossTransaction(result)
+}
+
+async function callMossContractBatch(
+  calls: Array<{
+    address: Address
+    abi: unknown
+    functionName: string
+    args: unknown[]
+  }>,
+  silent: boolean,
+): Promise<Hash> {
+  await initialiseMossWallet()
+  const requests = calls.map((call) => ({
+    ...call,
+    maxGasAllowance: MOSS_MAX_GAS_ALLOWANCE,
+    silent,
+    silentUIApproveFallback: silent,
+  }))
+
+  try {
+    const result = await mega.callContract(requests)
+    if (silent && shouldRetryMossVisibleApproval(result)) {
+      return callMossVisibleContractBatch(calls)
+    }
+    return requireMossTransaction(result)
+  } catch (error) {
+    if (!silent || !isRecoverableMossSilentError(error)) {
+      throw error
+    }
+
+    return callMossVisibleContractBatch(calls)
+  }
+}
+
+async function callMossVisibleContractBatch(
+  calls: Array<{
+    address: Address
+    abi: unknown
+    functionName: string
+    args: unknown[]
+  }>,
+): Promise<Hash> {
+  const result = await mega.callContract(
+    calls.map((call) => ({
+      ...call,
+      maxGasAllowance: MOSS_MAX_GAS_ALLOWANCE,
+      silent: false,
+      silentUIApproveFallback: false,
+    })),
+  )
   return requireMossTransaction(result)
 }
 
