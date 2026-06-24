@@ -492,8 +492,14 @@ interface MissionCardProps {
   onStart: () => void
 }
 
+interface RequirementItem {
+  detail?: string
+  label: string
+  tooltip?: string
+}
+
 interface RequirementGroup {
-  items: string[]
+  items: RequirementItem[]
   label: string
   tone: 'route' | 'level' | 'cargo' | 'module' | 'ship'
 }
@@ -555,7 +561,16 @@ function MissionRequirements({ fallback, groups }: { fallback: string[]; groups:
           <span>{group.label}</span>
           <ul>
             {group.items.map((item) => (
-              <li key={item}>{item}</li>
+              <li
+                className={item.tooltip ? 'has-tooltip' : undefined}
+                data-tooltip={item.tooltip}
+                key={`${group.label}-${item.label}-${item.detail ?? ''}`}
+                tabIndex={item.tooltip ? 0 : undefined}
+                title={item.tooltip}
+              >
+                <span>{item.label}</span>
+                {item.detail && <em>{item.detail}</em>}
+              </li>
             ))}
           </ul>
         </div>
@@ -619,14 +634,14 @@ function activityMatchesSkill(activity: ActivityDefinition, skillId: SkillId): b
 function getMissionRequirementGroups(game: GameState, activity: ActivityDefinition): RequirementGroup[] {
   const groups: RequirementGroup[] = []
   const sector = getSectorById(activity.sectorId)
-  const routeItems: string[] = []
+  const routeItems: RequirementItem[] = []
 
   if (!game.unlockedSectors[activity.sectorId]) {
-    routeItems.push(`${sector.name} locked`)
+    routeItems.push({ label: `${sector.name} locked` })
   }
 
   if (game.currentSectorId !== activity.sectorId) {
-    routeItems.push(`Travel to ${sector.name}`)
+    routeItems.push({ label: `Travel to ${sector.name}` })
   }
 
   if (routeItems.length > 0) {
@@ -635,28 +650,28 @@ function getMissionRequirementGroups(game: GameState, activity: ActivityDefiniti
 
   const levelItems = (Object.entries(activity.levelReqs) as [SkillId, number][])
     .filter(([skillId, level]) => getSkillLevel(game, skillId) < level)
-    .map(([skillId, level]) => `Level ${level} ${getSkillName(skillId)}`)
+    .map(([skillId, level]) => ({ label: `Level ${level} ${getSkillName(skillId)}` }))
 
   if (levelItems.length > 0) {
     groups.push({ items: levelItems, label: 'Level', tone: 'level' })
   }
 
-  const moduleItems: string[] = []
+  const moduleItems: RequirementItem[] = []
   if (activity.requiredModule && !hasItemEquippedOrInCargo(game, activity.requiredModule)) {
-    moduleItems.push(ITEMS[activity.requiredModule].name)
+    moduleItems.push({ label: ITEMS[activity.requiredModule].name })
   }
 
   if (activity.combat && !game.ship.modules.hardpoint) {
-    moduleItems.push('Hardpoint module')
+    moduleItems.push({ label: 'Hardpoint module' })
   }
 
   if (moduleItems.length > 0) {
     groups.push({ items: moduleItems, label: 'Module', tone: 'module' })
   }
 
-  const shipItems: string[] = []
+  const shipItems: RequirementItem[] = []
   if (activity.combat && game.ship.currentHull <= 0) {
-    shipItems.push('Repair hull before combat')
+    shipItems.push({ label: 'Repair hull before combat' })
   }
 
   if (shipItems.length > 0) {
@@ -665,7 +680,11 @@ function getMissionRequirementGroups(game: GameState, activity: ActivityDefiniti
 
   const cargoItems = (Object.entries(activity.costs ?? {}) as [ItemId, number][])
     .filter(([itemId, amount]) => game.cargo[itemId] < amount)
-    .map(([itemId, amount]) => `${formatItemQuantity(itemId, amount)} (have ${game.cargo[itemId]})`)
+    .map(([itemId, amount]) => ({
+      detail: `have ${game.cargo[itemId]}`,
+      label: formatItemQuantity(itemId, amount),
+      tooltip: formatCargoSourceTooltip(game, itemId),
+    }))
 
   if (cargoItems.length > 0) {
     groups.push({ items: cargoItems, label: 'Cargo', tone: 'cargo' })
@@ -704,6 +723,36 @@ function formatModuleStats(stats: ModuleStats = {}): string {
     .map(([key, label]) => `+${stats[key]} ${label}`)
 
   return summary.length > 0 ? summary.join(' / ') : 'No stat bonus'
+}
+
+function formatCargoSourceTooltip(game: GameState, itemId: ItemId): string {
+  const item = ITEMS[itemId]
+  const sources: string[] = []
+  const activitySources = ACTIVITIES.filter((activity) => (activity.rewards[itemId] ?? 0) > 0)
+  const relayOrder = game.marketOrders.find((order) => order.itemId === itemId && order.quantity > 0)
+
+  if (activitySources.length > 0) {
+    sources.push(`Obtain from ${formatActivitySourceList(activitySources, itemId)}.`)
+  }
+
+  if (relayOrder) {
+    sources.push(`Trade Relay: ${relayOrder.quantity} available at ${relayOrder.unitPrice} Credits each.`)
+  }
+
+  return sources.length > 0 ? sources.join(' ') : `No current source listed. ${item.description}`
+}
+
+function formatActivitySourceList(activities: ActivityDefinition[], itemId: ItemId): string {
+  const entries = activities.slice(0, 4).map((activity) => {
+    const amount = activity.rewards[itemId] ?? 0
+    return `${activity.name} (${getSectorById(activity.sectorId).name}, ${amount}/cycle)`
+  })
+
+  if (activities.length > 4) {
+    entries.push(`+${activities.length - 4} more`)
+  }
+
+  return entries.join(', ')
 }
 
 function formatCargoUseTooltip(itemId: ItemId): string {
