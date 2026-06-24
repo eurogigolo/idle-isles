@@ -107,8 +107,12 @@ function App() {
   const selectedSkillFilter = selectedSkillFilters[selectedGroup]
   const groupSkills = SKILLS.filter((skill) => skill.category === selectedGroup)
   const groupActivities = ACTIVITIES.filter((activity) => activity.group === selectedGroup)
-  const visibleActivities = groupActivities.filter(
-    (activity) => selectedSkillFilter === 'all' || activityMatchesSkill(activity, selectedSkillFilter),
+  const visibleActivities = sortMissionActivities(
+    groupActivities.filter(
+      (activity) => selectedSkillFilter === 'all' || activityMatchesSkill(activity, selectedSkillFilter),
+    ),
+    selectedGroup,
+    selectedSkillFilter,
   )
   const hullPct = Math.max(0, Math.min(100, (game.ship.currentHull / game.ship.maxHull) * 100))
   const progressPct = getMissionProgress(activeActivity, game, now)
@@ -619,6 +623,29 @@ function getMissionProgress(activity: ActivityDefinition | null, game: GameState
   if (!activity || !game.activeMission) return 0
   const elapsed = now - game.activeMission.lastClaimAt
   return Math.min(100, ((elapsed % activity.cycleMs) / activity.cycleMs) * 100)
+}
+
+function sortMissionActivities(
+  activities: ActivityDefinition[],
+  selectedGroup: ActivityGroup,
+  selectedSkillFilter: MissionSkillFilter,
+): ActivityDefinition[] {
+  if (selectedSkillFilter !== 'all' || (selectedGroup !== 'Gathering' && selectedGroup !== 'Production')) {
+    return activities
+  }
+
+  const skillOrder = new Map(SKILLS.map((skill, index) => [skill.id, index]))
+  const originalOrder = new Map(ACTIVITIES.map((activity, index) => [activity.id, index]))
+
+  return [...activities].sort((left, right) => {
+    const tierDelta = left.tier - right.tier
+    if (tierDelta !== 0) return tierDelta
+
+    const skillDelta = (skillOrder.get(left.primarySkill) ?? 0) - (skillOrder.get(right.primarySkill) ?? 0)
+    if (skillDelta !== 0) return skillDelta
+
+    return (originalOrder.get(left.id) ?? 0) - (originalOrder.get(right.id) ?? 0)
+  })
 }
 
 function formatXp(activity: ActivityDefinition): string {
