@@ -65,6 +65,7 @@ export interface ChainWriteRequest {
     | 'startGathering'
     | 'startProduction'
     | 'startCombat'
+    | 'startBossEncounter'
     | 'claimMission'
     | 'stopMission'
     | 'equipModule'
@@ -120,6 +121,7 @@ const IDLE_GALACTICA_ABI = parseAbi([
   'function setApprovalForAll(address operator, bool approved)',
   'function setCombatSettings(bool autoRepair, uint16 stopAtHull, uint256 repairItemId, uint16 maxRepairItemsPerClaim)',
   'function skillXp(address player, uint8 skill) view returns (uint64)',
+  'function startBossEncounter()',
   'function startCombat(uint16 activityId)',
   'function startGathering(uint16 activityId)',
   'function startProduction(uint16 activityId)',
@@ -172,6 +174,7 @@ export const MOSS_GAMEPLAY_CALLS = [
   'startGathering(uint16)',
   'startProduction(uint16)',
   'startCombat(uint16)',
+  'startBossEncounter()',
   'claimMission()',
   'stopMission()',
   'equipModule(uint256)',
@@ -390,6 +393,8 @@ export async function writeChainRequest(request: ChainWriteRequest): Promise<Has
       return submitGameWrite('startProduction', [Number(request.args?.[0] ?? 0)])
     case 'startCombat':
       return submitGameWrite('startCombat', [Number(request.args?.[0] ?? 0)])
+    case 'startBossEncounter':
+      return submitGameWrite('startBossEncounter', [])
     case 'equipModule':
       return submitGameWrite('equipModule', [BigInt(request.args?.[0] as bigint)])
     case 'unequipModule':
@@ -426,6 +431,10 @@ export async function writeStopMission(): Promise<Hash> {
 
 export async function writeClaimMission(): Promise<Hash> {
   return submitGameWrite('claimMission', [])
+}
+
+export async function writeStartBossEncounter(): Promise<Hash> {
+  return submitGameWrite('startBossEncounter', [])
 }
 
 export async function writeEquipModule(itemId: ItemId): Promise<Hash> {
@@ -491,6 +500,10 @@ export async function writeMossClaimMissionBatch(count: number): Promise<Hash> {
 
 export async function writeMossStopMission(): Promise<Hash> {
   return writeMossGameContract('stopMission', [])
+}
+
+export async function writeMossStartBossEncounter(): Promise<Hash> {
+  return writeMossGameContract('startBossEncounter', [])
 }
 
 export async function writeMossEquipModule(itemId: ItemId): Promise<Hash> {
