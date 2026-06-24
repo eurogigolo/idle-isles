@@ -1822,6 +1822,12 @@ function simulateClaim(
       break
     }
 
+    if (activity.combat) {
+      const repaired = applyAutoRepairPreview(state, cargo, hull, repairItemsUsed)
+      hull = repaired.hull
+      repairItemsUsed = repaired.repairItemsUsed
+    }
+
     if (activity.combat && hull <= state.combatSettings.stopAtHull) {
       preview.stoppedReason = 'Mission stopped: hull safety threshold reached.'
       break
@@ -1869,19 +1875,9 @@ function simulateClaim(
         break
       }
 
-      if (
-        state.combatSettings.autoRepair &&
-        hull <= state.combatSettings.stopAtHull &&
-        repairItemsUsed < state.combatSettings.maxRepairItemsPerClaim
-      ) {
-        const repairItem = ITEMS[state.combatSettings.repairItemId]
-        const repairAmount = repairItem.repairAmount ?? 0
-        if (cargo[state.combatSettings.repairItemId] > 0 && repairAmount > 0) {
-          cargo[state.combatSettings.repairItemId] -= 1
-          repairItemsUsed += 1
-          hull = Math.min(state.ship.maxHull, hull + repairAmount)
-        }
-      }
+      const repaired = applyAutoRepairPreview(state, cargo, hull, repairItemsUsed)
+      hull = repaired.hull
+      repairItemsUsed = repaired.repairItemsUsed
     } else {
       addRewards(preview.rewards, activity.rewards, cargo)
       addXp(preview.xp, activity.xp)
@@ -1892,6 +1888,39 @@ function simulateClaim(
 
   preview.repairItemsUsed = repairItemsUsed
   return preview
+}
+
+function applyAutoRepairPreview(
+  state: GameState,
+  cargo: Record<ItemId, number>,
+  hull: number,
+  repairItemsUsed: number,
+): { hull: number; repairItemsUsed: number } {
+  if (
+    !state.combatSettings.autoRepair ||
+    hull <= 0 ||
+    hull > state.combatSettings.stopAtHull ||
+    repairItemsUsed >= state.combatSettings.maxRepairItemsPerClaim
+  ) {
+    return { hull, repairItemsUsed }
+  }
+
+  const repairItemId = state.combatSettings.repairItemId
+  const repairAmount = ITEMS[repairItemId].repairAmount ?? 0
+  if (repairAmount <= 0) return { hull, repairItemsUsed }
+
+  while (
+    hull <= state.combatSettings.stopAtHull &&
+    repairItemsUsed < state.combatSettings.maxRepairItemsPerClaim &&
+    cargo[repairItemId] > 0 &&
+    hull < state.ship.maxHull
+  ) {
+    cargo[repairItemId] -= 1
+    repairItemsUsed += 1
+    hull = Math.min(state.ship.maxHull, hull + repairAmount)
+  }
+
+  return { hull, repairItemsUsed }
 }
 
 function resolveCombatCycle(

@@ -476,6 +476,13 @@ contract IdleGalactica is ERC1155 {
         uint256 repairItemsUsed;
 
         for (uint256 cycle = 0; cycle < cycles; cycle++) {
+            (hull, repairItemsUsed) = _autoRepairHullIfNeeded(
+                player,
+                settings,
+                hull,
+                repairItemsUsed
+            );
+
             if (hull <= settings.stopAtHull) {
                 settlement.stopped = true;
                 settlement.reason = "HULL_STOP";
@@ -519,19 +526,12 @@ contract IdleGalactica is ERC1155 {
             hull -= damageTaken;
             settlement.hullDamage += damageTaken;
 
-            if (
-                settings.autoRepair &&
-                hull <= settings.stopAtHull &&
-                repairItemsUsed < settings.maxRepairItemsPerClaim
-            ) {
-                uint16 repair = CONTENT.repairAmount(settings.repairItemId);
-                if (repair > 0 && balanceOf(player, settings.repairItemId) > 0) {
-                    _burn(player, settings.repairItemId, 1);
-                    repairItemsUsed += 1;
-                    uint16 cap = _maxHull(player);
-                    hull = hull + repair > cap ? cap : hull + repair;
-                }
-            }
+            (hull, repairItemsUsed) = _autoRepairHullIfNeeded(
+                player,
+                settings,
+                hull,
+                repairItemsUsed
+            );
 
             settlement.cycles += 1;
         }
@@ -660,6 +660,39 @@ contract IdleGalactica is ERC1155 {
         uint16 nextHull = hull + repair > cap ? cap : hull + repair;
         currentHull[player] = nextHull;
         return nextHull - hull;
+    }
+
+    function _autoRepairHullIfNeeded(
+        address player,
+        CombatSettings memory settings,
+        uint16 hull,
+        uint256 repairItemsUsed
+    ) internal returns (uint16, uint256) {
+        if (
+            !settings.autoRepair ||
+            hull == 0 ||
+            hull > settings.stopAtHull ||
+            repairItemsUsed >= settings.maxRepairItemsPerClaim
+        ) {
+            return (hull, repairItemsUsed);
+        }
+
+        uint16 repair = CONTENT.repairAmount(settings.repairItemId);
+        if (repair == 0) return (hull, repairItemsUsed);
+
+        uint16 cap = _maxHull(player);
+        while (
+            hull <= settings.stopAtHull &&
+            repairItemsUsed < settings.maxRepairItemsPerClaim &&
+            balanceOf(player, settings.repairItemId) > 0 &&
+            hull < cap
+        ) {
+            _burn(player, settings.repairItemId, 1);
+            repairItemsUsed += 1;
+            hull = hull + repair > cap ? cap : hull + repair;
+        }
+
+        return (hull, repairItemsUsed);
     }
 
     function _maxHull(address player) internal view returns (uint16) {
