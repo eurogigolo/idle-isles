@@ -118,6 +118,7 @@ select {
   border-color: rgba(110, 198, 255, 0.45);
 }
 
+.play-mode-switch,
 .wallet-mode-switch {
   display: inline-flex;
   padding: 0.18rem;
@@ -126,12 +127,14 @@ select {
   background: rgba(12, 24, 36, 0.68);
 }
 
+.play-mode-switch button,
 .wallet-mode-switch button {
   min-height: 1.55rem;
   border-color: transparent;
   background: transparent;
 }
 
+.play-mode-switch button.selected,
 .wallet-mode-switch button.selected,
 .chain-controls button.selected {
   border-color: rgba(75, 222, 178, 0.65);
