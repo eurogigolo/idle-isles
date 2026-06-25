@@ -68,17 +68,6 @@ const BOSS_HITBOX = { halfHeight: 0.2, halfWidth: 0.22 }
 const BOLT_HITBOX = { halfHeight: 0.035, halfWidth: 0.07 }
 const WIDE_HITBOX = { halfHeight: 0.22, halfWidth: 0.46 }
 
-const BOSS_CORE_PATTERN = [
-  { col: 1, row: 1 },
-  { col: 0, row: 0 },
-  { col: 2, row: 1 },
-  { col: 1, row: 2 },
-  { col: 0, row: 1 },
-  { col: 2, row: 0 },
-  { col: 1, row: 1 },
-  { col: 2, row: 2 },
-]
-
 const WIDE_ATTACK_ROWS = [0, 2, 1, 0, 2, 1]
 
 const CONTROL_KEYS = new Set([
@@ -126,7 +115,6 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   const lastBossShotAt = useRef(0)
   const lastBossSpecialAt = useRef(0)
   const lastPanelLockdownAt = useRef(0)
-  const bossPatternIndex = useRef(0)
   const wideAttackIndex = useRef(0)
 
   useEffect(() => {
@@ -251,8 +239,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     if (now - lastBossMoveAt.current < BOSS_MOVE_COOLDOWN_MS) return current
 
     lastBossMoveAt.current = now
-    bossPatternIndex.current = (bossPatternIndex.current + 1) % BOSS_CORE_PATTERN.length
-    const nextCore = BOSS_CORE_PATTERN[bossPatternIndex.current]
+    const nextCore = getRandomBossStep(current.bossCoreCol, current.bossCoreRow)
 
     return {
       ...current,
@@ -653,6 +640,17 @@ function ControlButton({ label, onHold, onRelease }: ControlButtonProps) {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
+}
+
+function getRandomBossStep(col: number, row: number): PlayerPanel {
+  const steps: PlayerPanel[] = [
+    { col, row: row - 1 },
+    { col, row: row + 1 },
+    { col: col - 1, row },
+    { col: col + 1, row },
+  ].filter((step) => step.col >= 0 && step.col < PLAYER_COLUMNS && step.row >= 0 && step.row < ROWS)
+
+  return steps[Math.floor(Math.random() * steps.length)] ?? { col, row }
 }
 
 function getRandomPanelLockdownTarget(disabledPanels: PlayerPanel[]): PlayerPanel | null {
