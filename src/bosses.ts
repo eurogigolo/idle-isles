@@ -2,6 +2,9 @@ import { ITEMS, getShipStats, type GameState, type SectorId } from './game'
 
 export type BossPhase = 1 | 2 | 3
 export type BossRiftTarget = 'bossRow' | 'cycle' | 'playerRow'
+export type BossSpecialKind = 'crush' | 'rift'
+export type BossTheme = 'belt' | 'rift'
+export type BossVolleyProjectileKind = 'bolt' | 'shrapnel'
 
 export interface BossPhaseConfig {
   boltDamage: number
@@ -18,8 +21,10 @@ export interface BossPhaseConfig {
 export interface SectorBossAttackPattern {
   phaseThreeExtraBolt: boolean
   phaseThreeRiftEvery: number
+  phaseThreeSpecialKind: BossSpecialKind
   riftTarget: BossRiftTarget
   riftRows?: number[]
+  volleyProjectileKind: BossVolleyProjectileKind
   volleyRows: number[][]
   wideRows: number[]
 }
@@ -38,6 +43,7 @@ export interface SectorBoss {
   playerMaxHp: number
   sectorId: SectorId
   subtitle: string
+  theme: BossTheme
   victoryText: string
   attackPattern: SectorBossAttackPattern
 }
@@ -72,7 +78,9 @@ export const SECTOR_BOSSES: Record<SectorId, SectorBoss> = {
     attackPattern: {
       phaseThreeExtraBolt: true,
       phaseThreeRiftEvery: 3,
+      phaseThreeSpecialKind: 'rift',
       riftTarget: 'playerRow',
+      volleyProjectileKind: 'bolt',
       volleyRows: [
         [0, 2],
         [0, 1],
@@ -128,15 +136,18 @@ export const SECTOR_BOSSES: Record<SectorId, SectorBoss> = {
     playerMaxHp: 6,
     sectorId: 'orbitalDock',
     subtitle: 'Orbital Dock Boss',
+    theme: 'rift',
     victoryText: 'Rift Warden signal broken. Return to command when ready.',
   },
   innerBelt: {
-    activeHint: 'Read the shrapnel rows and keep moving through the Belt Breaker barrage.',
+    activeHint: 'Read the shrapnel lanes and dodge the crush beam cycles.',
     attackPattern: {
       phaseThreeExtraBolt: true,
       phaseThreeRiftEvery: 2,
+      phaseThreeSpecialKind: 'crush',
       riftRows: [2, 0, 1],
       riftTarget: 'cycle',
+      volleyProjectileKind: 'shrapnel',
       volleyRows: [
         [0, 1],
         [1, 2],
@@ -147,11 +158,11 @@ export const SECTOR_BOSSES: Record<SectorId, SectorBoss> = {
     },
     defeatText: 'Armor breach contained. Return to command when ready.',
     description:
-      'A mining warship that pressures multiple rows with shrapnel volleys and cycling crush beams.',
+      'A mining warship that pressures multiple rows with slow shrapnel volleys and cycling crush beams.',
     encounterName: 'Inner Belt Boss',
     id: 'beltBreaker',
     maxHp: 26,
-    mechanics: ['Shrapnel volleys', 'Crush beam cycles', 'Faster armor phases'],
+    mechanics: ['Shrapnel volleys', 'Crush beam cycles', 'Cratered panels', 'Armor rupture'],
     name: 'Belt Breaker',
     phaseConfig: {
       1: {
@@ -192,6 +203,7 @@ export const SECTOR_BOSSES: Record<SectorId, SectorBoss> = {
     playerMaxHp: 6,
     sectorId: 'innerBelt',
     subtitle: 'Inner Belt Boss',
+    theme: 'belt',
     victoryText: 'Belt Breaker core cracked. Return to command when ready.',
   },
 }
