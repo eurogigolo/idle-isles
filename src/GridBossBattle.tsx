@@ -10,9 +10,9 @@ interface GridBossBattleProps {
   onComplete: (result: GridBossResult) => void
 }
 
-type ProjectileKind = 'bolt' | 'charge' | 'wide' | 'rift'
-type TelegraphKind = 'wide' | 'volley' | 'rift'
-type ParticleKind = 'spark' | 'burst' | 'trail' | 'rift' | 'core'
+type ProjectileKind = 'bolt' | 'charge' | 'crush' | 'shrapnel' | 'wide' | 'rift'
+type TelegraphKind = 'crush' | 'wide' | 'volley' | 'rift'
+type ParticleKind = 'spark' | 'burst' | 'trail' | 'rift' | 'core' | 'shrapnel'
 
 interface Projectile {
   damage: number
@@ -95,7 +95,9 @@ const COUNTDOWN_START = 3
 const PLAYER_BOLT_SPEED = 0.011
 const PLAYER_CHARGE_SPEED = 0.013
 const BOSS_BOLT_SPEED = -0.0055
+const BOSS_SHRAPNEL_SPEED = -0.0046
 const BOSS_WIDE_SPEED = -0.009
+const BOSS_CRUSH_SPEED = -0.0064
 const BOSS_RIFT_SPEED = -0.0048
 const PLAYER_BOLT_DAMAGE = 1
 const PLAYER_CHARGE_MIN_DAMAGE = 3
@@ -104,7 +106,9 @@ const PLAYER_HITBOX = { halfHeight: 0.14, halfWidth: 0.18 }
 const BOSS_HITBOX = { halfHeight: 0.2, halfWidth: 0.22 }
 const BOLT_HITBOX = { halfHeight: 0.035, halfWidth: 0.07 }
 const CHARGE_HITBOX = { halfHeight: 0.06, halfWidth: 0.16 }
+const SHRAPNEL_HITBOX = { halfHeight: 0.06, halfWidth: 0.09 }
 const WIDE_HITBOX = { halfHeight: 0.22, halfWidth: 0.46 }
+const CRUSH_HITBOX = { halfHeight: 0.2, halfWidth: 0.32 }
 const RIFT_HITBOX = { halfHeight: 0.12, halfWidth: 0.2 }
 const PARTICLE_LIMIT = 100
 
@@ -404,7 +408,7 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
         battleBoss.attackPattern.phaseThreeRiftEvery > 0 &&
         specialIndex % battleBoss.attackPattern.phaseThreeRiftEvery === battleBoss.attackPattern.phaseThreeRiftEvery - 1
       ) {
-        kind = 'rift'
+        kind = battleBoss.attackPattern.phaseThreeSpecialKind
         rows = [getRiftTargetRow(battleBoss, current, specialIndex)]
       } else if (current.bossPhase >= 2 && specialIndex % 2 === 1) {
         kind = 'volley'
@@ -416,8 +420,8 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
 
       return {
         ...current,
-        phaseFlashMs: kind === 'rift' ? Math.max(current.phaseFlashMs, 420) : current.phaseFlashMs,
-        screenShake: kind === 'wide' || kind === 'rift' ? Math.max(current.screenShake, 0.32) : current.screenShake,
+        phaseFlashMs: kind === 'rift' || kind === 'crush' ? Math.max(current.phaseFlashMs, 420) : current.phaseFlashMs,
+        screenShake: kind === 'wide' || kind === 'rift' || kind === 'crush' ? Math.max(current.screenShake, 0.32) : current.screenShake,
         telegraphs: [
           ...current.telegraphs,
           {
@@ -488,31 +492,34 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
         continue
       }
 
-      if (telegraph.kind === 'rift') {
+      if (telegraph.kind === 'rift' || telegraph.kind === 'crush') {
+        const projectileKind = telegraph.kind
+        const particleKind = projectileKind === 'crush' ? 'shrapnel' : 'rift'
         for (const row of telegraph.rows) {
           projectiles.push({
             damage: config.riftDamage,
             id: projectileId.current++,
-            kind: 'rift',
+            kind: projectileKind,
             owner: 'boss',
             row,
-            speed: BOSS_RIFT_SPEED,
+            speed: projectileKind === 'crush' ? BOSS_CRUSH_SPEED : BOSS_RIFT_SPEED,
             x: COLUMNS - 0.36,
           })
-          particles = addParticles(particles, createParticleBurst('rift', COLUMNS - 0.35, row + 0.5, 12))
+          particles = addParticles(particles, createParticleBurst(particleKind, COLUMNS - 0.35, row + 0.5, 12))
         }
-        screenShake = Math.max(screenShake, 0.82)
+        screenShake = Math.max(screenShake, projectileKind === 'crush' ? 0.88 : 0.82)
         continue
       }
 
+      const volleyProjectileKind = battleBoss.attackPattern.volleyProjectileKind
       for (const row of telegraph.rows) {
         projectiles.push({
           damage: config.volleyDamage,
           id: projectileId.current++,
-          kind: 'bolt',
+          kind: volleyProjectileKind,
           owner: 'boss',
           row,
-          speed: BOSS_BOLT_SPEED,
+          speed: volleyProjectileKind === 'shrapnel' ? BOSS_SHRAPNEL_SPEED : BOSS_BOLT_SPEED,
           x: BOSS_ZONE_START + current.bossCoreCol + 0.24,
         })
       }
@@ -545,7 +552,7 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
     return {
       ...current,
       disabledPanels,
-      particles: addParticles(current.particles, createParticleBurst('rift', panel.col + 0.5, panel.row + 0.5, 8)),
+      particles: addParticles(current.particles, createParticleBurst(getPanelLockParticle(battleBoss), panel.col + 0.5, panel.row + 0.5, 8)),
       playerCol: fallbackPanel?.col ?? current.playerCol,
       playerRow: fallbackPanel?.row ?? current.playerRow,
       screenShake: Math.max(current.screenShake, 0.22),
@@ -579,10 +586,10 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
         particles = addParticles(
           particles,
           createParticleBurst(
-            nextProjectile.owner === 'player' ? 'trail' : 'rift',
+            getProjectileTrailParticle(nextProjectile),
             projectileCenterX,
             projectileCenterY,
-            nextProjectile.kind === 'charge' || nextProjectile.kind === 'rift' ? 2 : 1,
+            nextProjectile.kind === 'charge' || nextProjectile.kind === 'rift' || nextProjectile.kind === 'crush' ? 2 : 1,
           ),
         )
       }
@@ -629,11 +636,16 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
         stats.damageTaken += damageTaken
         particles = addParticles(
           particles,
-          createParticleBurst('spark', current.playerCol + 0.5, current.playerRow + 0.5, nextProjectile.kind === 'bolt' ? 8 : 14),
+          createParticleBurst(
+            nextProjectile.kind === 'shrapnel' || nextProjectile.kind === 'crush' ? 'shrapnel' : 'spark',
+            current.playerCol + 0.5,
+            current.playerRow + 0.5,
+            nextProjectile.kind === 'bolt' || nextProjectile.kind === 'shrapnel' ? 8 : 14,
+          ),
         )
         screenShake = Math.max(
           screenShake,
-          nextProjectile.kind === 'wide' || nextProjectile.kind === 'rift' ? 0.9 : 0.46,
+          nextProjectile.kind === 'wide' || nextProjectile.kind === 'rift' || nextProjectile.kind === 'crush' ? 0.9 : 0.46,
         )
         continue
       }
@@ -809,7 +821,7 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
   ]
     .filter(Boolean)
     .join(' ')
-  const arenaClassName = ['grid-boss-arena', `phase-${battle.bossPhase}`].join(' ')
+  const arenaClassName = ['grid-boss-arena', `phase-${battle.bossPhase}`, `theme-${battleBoss.theme}`].join(' ')
   const playerShipStyle = {
     ...gridPosition(battle.playerCol, battle.playerRow),
     '--charge-progress': chargeProgress,
@@ -860,7 +872,7 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
                 className={[
                   'grid-panel',
                   isPlayerZone ? 'player-zone' : 'boss-zone',
-                  isDisabled ? 'disabled-panel' : '',
+                  isDisabled ? `disabled-panel theme-${battleBoss.theme}` : '',
                 ]
                   .filter(Boolean)
                   .join(' ')}
@@ -883,6 +895,7 @@ export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattlePr
           <div
             className={[
               'boss-entity',
+              `theme-${battleBoss.theme}`,
               `phase-${battle.bossPhase}`,
               battle.bossDamageFlashMs > 0 ? 'damaged' : '',
               battle.phaseFlashMs > 0 ? 'phase-shift' : '',
@@ -1106,9 +1119,20 @@ function reduceIncomingDamage(damage: number, modifiers: BossBattleModifiers): n
 }
 
 function getTrailChance(kind: ProjectileKind): number {
-  if (kind === 'charge' || kind === 'rift') return 0.65
+  if (kind === 'charge' || kind === 'rift' || kind === 'crush') return 0.65
+  if (kind === 'shrapnel') return 0.5
   if (kind === 'wide') return 0.42
   return 0.22
+}
+
+function getProjectileTrailParticle(projectile: Projectile): ParticleKind {
+  if (projectile.owner === 'player') return 'trail'
+  if (projectile.kind === 'shrapnel' || projectile.kind === 'crush') return 'shrapnel'
+  return 'rift'
+}
+
+function getPanelLockParticle(boss: SectorBoss): ParticleKind {
+  return boss.theme === 'belt' ? 'shrapnel' : 'rift'
 }
 
 function isFireHeld(keys: Set<string>): boolean {
@@ -1199,9 +1223,13 @@ function getProjectileHitbox(projectile: Projectile): Hitbox {
       ? WIDE_HITBOX
       : projectile.kind === 'charge'
         ? CHARGE_HITBOX
+        : projectile.kind === 'crush'
+          ? CRUSH_HITBOX
         : projectile.kind === 'rift'
           ? RIFT_HITBOX
-          : BOLT_HITBOX
+          : projectile.kind === 'shrapnel'
+            ? SHRAPNEL_HITBOX
+            : BOLT_HITBOX
 
   return {
     centerX: projectile.x + 0.5,

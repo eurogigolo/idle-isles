@@ -1,6 +1,75 @@
 Grid Boss Encounter - Current Implementation Details
 ====================================================
 
+Last updated
+------------
+- Date: 2026-06-25.
+- Purpose: Track the current boss battle implementation and the near-term design direction for sector bosses and equipment impact.
+
+High-level boss direction
+-------------------------
+- Idle Galactica is structured around sectors as progression chapters.
+- Each sector should eventually have its own capstone boss.
+- Each boss should teach or test the mechanics, resources, and ship-building priorities of its sector.
+- Boss fights should remain skill-based arcade encounters, but equipped ship modules should noticeably improve the player's odds.
+- Gear should make boss fights smoother and more forgiving, not automatic.
+- The preferred long-term shape is:
+  - Sector missions introduce resources, threats, and upgrade goals.
+  - Production creates or improves the modules that help with that sector's boss.
+  - The sector boss acts as the capstone test.
+  - Future rewards can make boss kills matter economically once the fight loop feels good.
+
+Sector boss philosophy
+----------------------
+- Orbital Dock:
+  - Role: starter boss and tutorial capstone.
+  - Current boss: Rift Warden.
+  - Focus: movement, dodging, charge shots, row telegraphs, and panel lockdowns.
+- Inner Belt:
+  - Role: first real progression boss.
+  - Current boss: Belt Breaker.
+  - Focus: heavier pressure, multi-row volleys, stronger phases, and module preparation.
+- Future sectors:
+  - Each sector should get a different boss identity and attack language.
+  - Examples:
+    - Nebula sector boss: visibility distortion, slow fields, energy attacks.
+    - Wreck sector boss: drones, mines, scrap hazards, disable effects.
+    - Deep space boss: phase shifts, gravity pulls, unstable panels.
+
+Equipment impact philosophy
+---------------------------
+- Gear should provide minor but meaningful boss-fight modifiers.
+- The best balance target is "noticeably better" rather than "required to win."
+- Hardpoints should improve offense.
+- Shield arrays and hull plating should improve survival.
+- Engines should improve movement feel.
+- Sensor suites should improve warning/telegraph windows.
+- Auxiliary modules should improve utility effects such as charge damage or panel lockdown delay.
+- The current modifier system is intentionally capped so later gear tiers can be added without breaking early bosses.
+
+Adding a new sector boss
+------------------------
+- Add or confirm the sector in src/game.ts.
+- Add a SectorBoss entry in src/bosses.ts.
+- Define:
+  - boss id.
+  - display name.
+  - sector id.
+  - base boss HP.
+  - base player boss-fight hull.
+  - phase numbers.
+  - attack pattern rows.
+  - rift targeting behavior.
+  - UI mechanics labels.
+  - victory/defeat/active text.
+- Reuse GridBossBattle unless the boss needs a new projectile, telegraph, or arena rule.
+- If a boss needs a new attack family, add the smallest reusable attack concept to GridBossBattle instead of hardcoding sector-specific branches.
+- Update this file with exact numbers after implementation.
+- Run:
+  - npm.cmd run lint.
+  - npm.cmd run content:check.
+  - npm.cmd run build.
+
 Source files
 ------------
 - Sector boss data and gear modifiers: src/bosses.ts
@@ -17,6 +86,15 @@ Core model
   - innerBelt -> Belt Breaker.
 - The battle engine is shared.
 - Boss identity, HP, phase numbers, attack row patterns, text, and mechanics are data-driven through SectorBoss.
+- Bosses can define their own visual theme:
+  - rift.
+  - belt.
+- Bosses can define their Phase 3 special attack kind:
+  - rift.
+  - crush.
+- Bosses can define their volley projectile kind:
+  - bolt.
+  - shrapnel.
 - Equipped ship modules create BossBattleModifiers before the battle starts.
 - The modifiers are snapshotted from the current game state when GridBossBattle mounts.
 - The contract still charges the generic boss encounter entry cost; the frontend chooses the sector boss.
@@ -255,13 +333,20 @@ Inner Belt boss
 - Mechanics shown in UI:
   - Shrapnel volleys.
   - Crush beam cycles.
-  - Faster armor phases.
+  - Cratered panels.
+  - Armor rupture.
 - Victory text:
   - Belt Breaker core cracked. Return to command when ready.
 - Defeat text:
   - Armor breach contained. Return to command when ready.
 - Active hint:
-  - Read the shrapnel rows and keep moving through the Belt Breaker barrage.
+  - Read the shrapnel lanes and dodge the crush beam cycles.
+- Visual theme:
+  - belt.
+  - Warmer asteroid-belt arena background.
+  - Armored mining-warship boss shape.
+  - Cratered disabled panels.
+  - Shrapnel impact/trail particles.
 
 Belt Breaker attack pattern
 ---------------------------
@@ -273,12 +358,18 @@ Belt Breaker attack pattern
   - [0, 2]
   - [0, 1, 2]
   - then repeats by special index.
-- Phase 3 rift cadence:
+- Volley projectile kind:
+  - shrapnel.
+- Shrapnel projectile speed:
+  - -0.0046 grid columns per ms.
+- Phase 3 crush cadence:
   - Every 2nd special when specialIndex % 2 == 1.
-- Rift target mode:
+- Crush target mode:
   - cycle.
-- Rift row cycle:
+- Crush row cycle:
   - 2, 0, 1, then repeats.
+- Crush projectile speed:
+  - -0.0064 grid columns per ms.
 - Phase 3 extra normal bolt:
   - Enabled.
   - Every other normal shot fires a second bolt.
@@ -295,9 +386,9 @@ Phase 1:
 - Boss special telegraph time: 640 ms plus telegraphBonusMs.
 - Panel lockdown cooldown: 3100 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 1.
-- Volley bolt damage: 1.
+- Shrapnel volley damage: 1.
 - Wide attack damage: 4.
-- Rift projectile damage: 3.
+- Crush beam damage: 3.
 
 Phase 2:
 - HP range: 65% through above 30%.
@@ -308,9 +399,9 @@ Phase 2:
 - Boss special telegraph time: 560 ms plus telegraphBonusMs.
 - Panel lockdown cooldown: 2700 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 2.
-- Volley bolt damage: 2.
+- Shrapnel volley damage: 2.
 - Wide attack damage: 5.
-- Rift projectile damage: 4.
+- Crush beam damage: 4.
 
 Phase 3:
 - HP range: 30% and below.
@@ -321,9 +412,9 @@ Phase 3:
 - Boss special telegraph time: 500 ms plus telegraphBonusMs.
 - Panel lockdown cooldown: 2250 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 2.
-- Volley bolt damage: 2.
+- Shrapnel volley damage: 2.
 - Wide attack damage: 6.
-- Rift projectile damage: 4.
+- Crush beam damage: 4.
 
 Boss movement
 -------------
@@ -350,7 +441,9 @@ Panel lockdown
   - Distance metric: Manhattan distance.
   - Ties use the existing row-major open panel order.
 - A disabled panel increments panelsDisabled.
-- A disabled panel creates rift particles and light screen shake.
+- A disabled panel creates theme-specific particles and light screen shake:
+  - rift theme: rift particles.
+  - belt theme: shrapnel particles.
 
 Projectile movement and hitboxes
 --------------------------------
@@ -375,6 +468,9 @@ Projectile movement and hitboxes
 - Bolt hitbox:
   - halfWidth = 0.07.
   - halfHeight = 0.035.
+- Shrapnel hitbox:
+  - halfWidth = 0.09.
+  - halfHeight = 0.06.
 - Charge shot hitbox:
   - halfWidth = 0.16.
   - halfHeight = 0.06.
@@ -384,6 +480,9 @@ Projectile movement and hitboxes
 - Rift projectile hitbox:
   - halfWidth = 0.20.
   - halfHeight = 0.12.
+- Crush beam hitbox:
+  - halfWidth = 0.32.
+  - halfHeight = 0.20.
 
 End screen stats
 ----------------
