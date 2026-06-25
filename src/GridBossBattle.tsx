@@ -1,3 +1,4 @@
+import { Mic, MicOff } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 
 export type GridBossResult = 'win' | 'loss'
@@ -70,18 +71,6 @@ const BOSS_CORE_PATTERN = [
 
 const WIDE_ATTACK_ROWS = [0, 2, 1, 0, 2, 1]
 
-const PANEL_LOCKDOWN_PATTERN: PlayerPanel[] = [
-  { col: 1, row: 1 },
-  { col: 0, row: 0 },
-  { col: 2, row: 2 },
-  { col: 2, row: 0 },
-  { col: 0, row: 2 },
-  { col: 1, row: 0 },
-  { col: 1, row: 2 },
-  { col: 0, row: 1 },
-  { col: 2, row: 1 },
-]
-
 const CONTROL_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -112,8 +101,10 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     status: 'active',
     telegraphs: [],
   })
+  const [musicMuted, setMusicMuted] = useState(false)
   const pressedKeys = useRef(new Set<string>())
   const overlayRef = useRef<HTMLDivElement | null>(null)
+  const musicRef = useRef<BossMusicController | null>(null)
   const projectileId = useRef(1)
   const telegraphId = useRef(1)
   const frameId = useRef<number | null>(null)
@@ -125,12 +116,30 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   const lastBossSpecialAt = useRef(0)
   const lastPanelLockdownAt = useRef(0)
   const bossPatternIndex = useRef(0)
-  const panelLockdownIndex = useRef(0)
   const wideAttackIndex = useRef(0)
 
   useEffect(() => {
     overlayRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (musicMuted || battle.status !== 'active') {
+      musicRef.current?.stop()
+      musicRef.current = null
+      return
+    }
+
+    const music = createBossMusic()
+    musicRef.current = music
+    void music?.start()
+
+    return () => {
+      music?.stop()
+      if (musicRef.current === music) {
+        musicRef.current = null
+      }
+    }
+  }, [battle.status, musicMuted])
 
   useEffect(() => {
     const activeKeys = pressedKeys.current
@@ -293,7 +302,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     if (now - lastPanelLockdownAt.current < PANEL_LOCKDOWN_COOLDOWN_MS) return current
     if (current.disabledPanels.length >= MAX_DISABLED_PLAYER_PANELS) return current
 
-    const panel = getNextPanelLockdownTarget(current.disabledPanels, panelLockdownIndex)
+    const panel = getRandomPanelLockdownTarget(current.disabledPanels)
     if (!panel) return current
 
     lastPanelLockdownAt.current = now
@@ -428,6 +437,10 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     onComplete(battle.status === 'won' ? 'win' : 'loss')
   }
 
+  function toggleMusic() {
+    setMusicMuted((current) => !current)
+  }
+
   const resultTitle = battle.status === 'won' ? 'Victory' : battle.status === 'lost' ? 'Retreat' : ''
   const resultText =
     battle.status === 'won'
@@ -529,6 +542,16 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
 
         <div className="grid-boss-footer">
           <span>{resultText}</span>
+          <button
+            aria-label={musicMuted ? 'Unmute boss music' : 'Mute boss music'}
+            aria-pressed={!musicMuted}
+            className={`grid-boss-mute-button ${musicMuted ? 'muted' : ''}`}
+            onClick={toggleMusic}
+            title={musicMuted ? 'Unmute boss music' : 'Mute boss music'}
+            type="button"
+          >
+            {musicMuted ? <MicOff size={16} /> : <Mic size={16} />}
+          </button>
           {battle.status === 'active' ? (
             <div className="grid-boss-controls" aria-label="Touch battle controls">
               <ControlButton label="Up" onHold={() => holdKey('ArrowUp')} onRelease={() => releaseKey('ArrowUp')} />
@@ -566,6 +589,11 @@ interface ControlButtonProps {
   onRelease: () => void
 }
 
+interface BossMusicController {
+  start: () => Promise<void>
+  stop: () => void
+}
+
 function ControlButton({ label, onHold, onRelease }: ControlButtonProps) {
   return (
     <button
@@ -585,20 +613,19 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
 }
 
-function getNextPanelLockdownTarget(
-  disabledPanels: PlayerPanel[],
-  cursor: { current: number },
-): PlayerPanel | null {
-  for (let attempts = 0; attempts < PANEL_LOCKDOWN_PATTERN.length; attempts += 1) {
-    const index = (cursor.current + attempts) % PANEL_LOCKDOWN_PATTERN.length
-    const panel = PANEL_LOCKDOWN_PATTERN[index]
-    if (!isPanelDisabled(disabledPanels, panel.col, panel.row)) {
-      cursor.current = (index + 1) % PANEL_LOCKDOWN_PATTERN.length
-      return { ...panel }
+function getRandomPanelLockdownTarget(disabledPanels: PlayerPanel[]): PlayerPanel | null {
+  const openPanels: PlayerPanel[] = []
+
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let col = 0; col < PLAYER_COLUMNS; col += 1) {
+      if (!isPanelDisabled(disabledPanels, col, row)) {
+        openPanels.push({ col, row })
+      }
     }
   }
 
-  return null
+  if (openPanels.length === 0) return null
+  return openPanels[Math.floor(Math.random() * openPanels.length)]
 }
 
 function findNearestOpenPlayerPanel(
@@ -627,6 +654,80 @@ function findNearestOpenPlayerPanel(
 
 function isPanelDisabled(disabledPanels: PlayerPanel[], col: number, row: number): boolean {
   return disabledPanels.some((panel) => panel.col === col && panel.row === row)
+}
+
+function createBossMusic(): BossMusicController | null {
+  const audioWindow = window as Window & {
+    webkitAudioContext?: typeof AudioContext
+  }
+  const AudioContextConstructor = window.AudioContext ?? audioWindow.webkitAudioContext
+  if (!AudioContextConstructor) return null
+
+  const context = new AudioContextConstructor()
+  const master = context.createGain()
+  let intervalId: number | null = null
+  let step = 0
+
+  master.gain.value = 0.055
+  master.connect(context.destination)
+
+  function playTone(
+    frequency: number,
+    duration: number,
+    gainLevel: number,
+    type: OscillatorType,
+    when: number,
+  ) {
+    const oscillator = context.createOscillator()
+    const gain = context.createGain()
+
+    oscillator.type = type
+    oscillator.frequency.setValueAtTime(frequency, when)
+    gain.gain.setValueAtTime(0.001, when)
+    gain.gain.exponentialRampToValueAtTime(gainLevel, when + 0.018)
+    gain.gain.exponentialRampToValueAtTime(0.001, when + duration)
+    oscillator.connect(gain)
+    gain.connect(master)
+    oscillator.start(when)
+    oscillator.stop(when + duration + 0.04)
+  }
+
+  function scheduleStep() {
+    const now = context.currentTime + 0.035
+    const bassLine = [55, 55, 65.41, 55, 82.41, 73.42, 65.41, 49]
+    const leadLine = [220, 246.94, 293.66, 329.63, 293.66, 246.94, 196, 164.81]
+    const bass = bassLine[step % bassLine.length]
+
+    playTone(bass, 0.16, 0.34, 'sawtooth', now)
+    if (step % 2 === 0) playTone(bass / 2, 0.12, 0.2, 'square', now + 0.04)
+    if (step % 4 === 2) playTone(leadLine[step % leadLine.length], 0.22, 0.18, 'triangle', now + 0.06)
+    if (step % 8 === 7) playTone(110, 0.34, 0.26, 'sawtooth', now + 0.08)
+    step += 1
+  }
+
+  return {
+    async start() {
+      try {
+        await context.resume()
+      } catch {
+        return
+      }
+
+      scheduleStep()
+      intervalId = window.setInterval(scheduleStep, 185)
+    },
+    stop() {
+      if (intervalId !== null) {
+        window.clearInterval(intervalId)
+        intervalId = null
+      }
+
+      master.gain.setTargetAtTime(0.001, context.currentTime, 0.02)
+      window.setTimeout(() => {
+        void context.close()
+      }, 80)
+    },
+  }
 }
 
 function gridPosition(col: number, row: number): CSSProperties {
