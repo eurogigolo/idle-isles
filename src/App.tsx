@@ -23,6 +23,14 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 import { GameScene } from './GameScene'
 import { GridBossBattle, type GridBossResult } from './GridBossBattle'
+import {
+  formatBossModifierSummary,
+  getBossBattleModifiers,
+  getEquippedBossModuleNames,
+  getSectorBoss,
+  type BossBattleModifiers,
+  type SectorBoss,
+} from './bosses'
 import type { Address } from './chain'
 import {
   ACTIVITIES,
@@ -204,6 +212,10 @@ function App() {
   const claimBatchCount =
     chainMode && walletMode === 'moss' ? getMossClaimBatchCount(activeActivity, preview.cycles) : 1
   const sector = getSectorById(game.currentSectorId)
+  const sectorBoss = getSectorBoss(game.currentSectorId)
+  const bossModifiers = useMemo(() => getBossBattleModifiers(game), [game])
+  const bossModifierSummary = formatBossModifierSummary(bossModifiers)
+  const equippedBossModuleNames = getEquippedBossModuleNames(game)
   const selectedGroup = selectedTab === 'Boss' ? 'Combat' : selectedTab
   const isBossTab = selectedTab === 'Boss'
   const selectedSkillFilter = selectedSkillFilters[selectedGroup]
@@ -734,7 +746,12 @@ function App() {
   return (
     <main className="app-shell">
       {bossBattleId !== null && (
-        <GridBossBattle key={bossBattleId} onComplete={handleBossBattleComplete} />
+        <GridBossBattle
+          boss={sectorBoss}
+          key={bossBattleId}
+          modifiers={bossModifiers}
+          onComplete={handleBossBattleComplete}
+        />
       )}
       <header className="topbar">
         <div>
@@ -961,12 +978,17 @@ function App() {
 
           {isBossTab ? (
             <BossEncounterPanel
+              boss={sectorBoss}
+              bossModifiers={bossModifiers}
               chainMode={chainMode}
               chainBusy={chainBusy}
               cost={bossEncounterCost}
               contractReady={chainBossEncounterCost !== null}
               credits={game.cargo.credits}
+              equippedModules={equippedBossModuleNames}
               hasProfile={chainHasProfile}
+              modifierSummary={bossModifierSummary}
+              sectorName={sector.name}
               onFight={handleBossFight}
             />
           ) : (
@@ -1261,46 +1283,66 @@ interface MissionCardProps {
 }
 
 interface BossEncounterPanelProps {
+  boss: SectorBoss
+  bossModifiers: BossBattleModifiers
   chainBusy: boolean
   chainMode: boolean
   contractReady: boolean
   cost: number
   credits: number
+  equippedModules: string[]
   hasProfile: boolean
+  modifierSummary: string
   onFight: () => void
+  sectorName: string
 }
 
 function BossEncounterPanel({
+  boss,
+  bossModifiers,
   chainBusy,
   chainMode,
   contractReady,
   cost,
   credits,
+  equippedModules,
   hasProfile,
+  modifierSummary,
   onFight,
+  sectorName,
 }: BossEncounterPanelProps) {
   const hasEnoughCredits = credits >= cost
   const disabled = chainBusy || !chainMode || !contractReady || !hasProfile || !hasEnoughCredits
   const formattedCost = formatCreditAmount(cost)
+  const moduleSummary =
+    equippedModules.length > 0 ? equippedModules.join(', ') : 'Install ship modules to gain boss-fight bonuses.'
 
   return (
     <article className="boss-encounter-card">
       <header>
         <Sparkles size={18} />
         <div>
-          <h3>Rift Warden</h3>
-          <span>Grid Boss Encounter</span>
+          <h3>{boss.name}</h3>
+          <span>{boss.subtitle} - {sectorName}</span>
         </div>
         <b>{formattedCost}</b>
       </header>
       <p>
-        Spend Credits on-chain to open a real-time 3 by 6 grid duel. Your ship holds the
-        left three columns while the boss controls the right side.
+        {boss.description} Spend Credits on-chain to open a real-time 3 by 6 grid duel.
+        Your ship holds the left three columns while the boss controls the right side.
       </p>
       <div className="boss-encounter-rules">
+        {boss.mechanics.map((mechanic) => (
+          <span key={mechanic}>{mechanic}</span>
+        ))}
         <span>Move: WASD / Arrow keys</span>
         <span>Fire: Space / Enter</span>
         <span>No rewards or loss penalties in this MVP</span>
+      </div>
+      <div className="boss-encounter-modifiers">
+        <span>Equipped modules: {moduleSummary}</span>
+        <strong>{modifierSummary}</strong>
+        {bossModifiers.labels.length === 0 && <small>Hardpoints, shields, plating, engines, sensors, and utility modules all help here.</small>}
       </div>
       <button disabled={disabled} onClick={onFight} type="button">
         <Crosshair size={16} />

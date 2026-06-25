@@ -3,22 +3,27 @@ Grid Boss Encounter - Current Implementation Details
 
 Source files
 ------------
+- Sector boss data and gear modifiers: src/bosses.ts
 - Frontend battle logic: src/GridBossBattle.tsx
 - Fight button / Boss tab flow: src/App.tsx
 - Battle styling: src/App.css
 - On-chain entry point: contracts/IdleGalactica.sol
 
-Boss identity
--------------
-- Encounter name: Grid Boss Encounter
-- Boss display name: Rift Warden
-- Result values returned to App.tsx: win, loss
-- Current MVP has no rewards, drops, or loss penalties from the arcade battle.
+Core model
+----------
+- Bosses are selected by current sector.
+- Current sectors with bosses:
+  - orbitalDock -> Rift Warden.
+  - innerBelt -> Belt Breaker.
+- The battle engine is shared.
+- Boss identity, HP, phase numbers, attack row patterns, text, and mechanics are data-driven through SectorBoss.
+- Equipped ship modules create BossBattleModifiers before the battle starts.
+- The modifiers are snapshotted from the current game state when GridBossBattle mounts.
+- The contract still charges the generic boss encounter entry cost; the frontend chooses the sector boss.
 
 On-chain entry flow
 -------------------
-- The fight starts from the existing Boss tab Fight button.
-- Chain Mode is required.
+- Chain Mode is required for the current boss entry flow.
 - A chain profile is required.
 - The configured game contract must expose BOSS_ENCOUNTER_COST().
 - Current Solidity cost: BOSS_ENCOUNTER_COST = 1.
@@ -34,7 +39,7 @@ On-chain entry flow
   - MOSS wallet mode calls writeMossStartBossEncounter().
   - Injected wallet mode calls writeStartBossEncounter().
   - After the write call resolves, App.tsx sets bossBattleId to Date.now().
-  - GridBossBattle mounts when bossBattleId is not null.
+  - GridBossBattle mounts with the current sector boss and current equipment modifiers.
 
 Grid layout
 -----------
@@ -53,52 +58,8 @@ Grid layout
 - Maximum disabled player panels: 8.
 - At least 1 player panel is always left usable.
 
-Positioning math
-----------------
-- Entity CSS position uses gridPosition(col, row):
-  - left = ((col + 0.5) / 6) * 100%
-  - top = ((row + 0.5) / 3) * 100%
-- Projectile CSS position uses projectilePosition(projectile):
-  - left = ((projectile.x + 0.5) / 6) * 100%
-  - top = ((projectile.row + 0.5) / 3) * 100%
-- Particle CSS position uses particlePosition(particle):
-  - left = (particle.x / 6) * 100%
-  - top = (particle.y / 3) * 100%
-- Projectile x is measured in grid-column units.
-- Projectile row is fixed when the projectile is created.
-
-Initial battle state
+Base player controls
 --------------------
-- Status: countdown.
-- Countdown starts at: 3.
-- Player starting row: 1.
-- Player starting column: 1.
-- Player starting panel: center of the left 3x3 player zone.
-- Player max hull: 6.
-- Player starting hull: 6.
-- Boss starting local row: 1.
-- Boss starting local column: 1.
-- Boss starting global column: 4.
-- Boss starting panel: center of the right 3x3 boss zone.
-- Boss max hull: 20.
-- Boss starting hull: 20.
-- Boss starting phase: 1.
-- Disabled panels: none.
-- Projectiles: none.
-- Telegraphs: none.
-- Particles: none.
-- Music muted: false.
-
-Countdown
----------
-- Countdown values shown: 3, then 2, then 1.
-- Countdown tick interval: 1000 ms.
-- After countdown reaches 0, battle status becomes active.
-- Movement, firing, boss movement, boss attacks, panel lockdowns, and music do not run until active status.
-- Countdown overlay text: Grid lock engaging.
-
-Controls
---------
 - Keyboard movement:
   - ArrowUp or W.
   - ArrowDown or S.
@@ -113,131 +74,256 @@ Controls
   - Fire.
   - Right.
   - Down.
-- The control keys call preventDefault() on keydown.
-- Holding movement repeats movement on the movement cooldown.
-- Releasing Fire resolves the current normal or charged shot.
-- Player movement cooldown: 95 ms.
+- Base movement cooldown: 95 ms.
+- Movement cooldown after modules = 95 ms * moveCooldownMultiplier.
 - Player movement is clamped to columns 0 through 2 and rows 0 through 2.
 - Player cannot move into a disabled panel.
-- If multiple keyboard directions are held:
-  - Up wins over Down.
-  - Left wins over Right.
-  - One row delta and one column delta may apply in the same movement tick.
-
-Player ship
------------
-- CSS class: player-ship.
-- Visual z-index: 5.
-- Width: clamp(3rem, 6vw, 4.4rem).
-- Height: clamp(1.75rem, 3.4vw, 2.55rem).
-- Shape: polygon clip-path:
-  - 0 50%
-  - 18% 15%
-  - 64% 0
-  - 100% 50%
-  - 64% 100%
-  - 18% 85%
-- Base glow:
-  - drop-shadow(0 0 14px rgba(110, 198, 255, 0.62))
-  - drop-shadow(-0.55rem 0 8px rgba(80, 210, 156, 0.26))
-- Movement CSS transition:
-  - left 95ms linear.
-  - top 95ms linear.
-- Charging adds:
-  - CSS class: charging.
-  - player-charge-ring child.
-  - Charge progress custom property: --charge-progress.
-  - Stronger cyan/green glow.
-- Fully charged adds:
-  - CSS class: charged.
-  - charged-ship-pulse animation every 540 ms.
+- Releasing Fire resolves the current normal or charged shot.
 
 Player firing
 -------------
-- Player fires only while battle status is active.
-- Fire inputs: Space, Enter, or the Fire touch button.
-- Tap / short hold fires a normal bolt.
-- Hold Fire for at least 360 ms to arm a charge shot.
-- Maximum charge time: 950 ms.
-- Normal shot cooldown: 220 ms.
-- Charge shot cooldown: 360 ms.
+- Base normal shot cooldown: 220 ms.
+- Base charge shot cooldown: 360 ms.
+- Base charge minimum: 360 ms.
+- Base full charge: 950 ms.
+- Charge timing after modules:
+  - chargeMinMs = round(360 * chargeTimeMultiplier).
+  - chargeMaxMs = round(950 * chargeTimeMultiplier).
 - Normal projectile:
   - kind: bolt.
   - owner: player.
-  - row: current player row at release time.
   - start x: playerCol + 0.72.
   - speed: 0.011 grid columns per ms to the right.
-  - damage: 1 boss hull.
+  - damage: 1 + playerDamageBonus.
 - Charge projectile:
   - kind: charge.
   - owner: player.
-  - row: current player row at release time.
   - start x: playerCol + 0.72.
   - speed: 0.013 grid columns per ms to the right.
-  - damage at 360 ms to 949 ms charge: 3 boss hull.
-  - damage at 950 ms charge: 5 boss hull.
-- Player projectiles are removed after boss contact.
-- Player projectiles are removed if x > 6.4.
+  - minimum charge damage: 3 + chargeDamageBonus.
+  - full charge damage: 5 + chargeDamageBonus.
 - Player shots increment shotsFired.
 - Charge shots increment chargeShotsFired.
 - Successful player hits increment shotsHit and damageDealt.
 - Successful charge hits increment chargeShotsHit.
 
-Boss phases
------------
-- Phase 1: 100% to above 65% HP.
-- Phase 2: 65% to above 30% HP.
-- Phase 3: 30% HP and below.
-- With 20 boss HP:
-  - Phase 1 starts at 20 HP.
-  - Phase 2 starts at 13 HP or lower.
-  - Phase 3 starts at 6 HP or lower.
-- Phase transitions trigger:
-  - phaseFlashMs = at least 780 ms.
-  - screenShake = at least 0.95.
-  - core particle burst at the boss.
-  - rift arena overlay.
-- Phase 3 visual changes:
-  - boss class phase-3.
-  - arena class phase-3.
-  - boss-enrage-pulse animation every 620 ms.
-  - boss-core-pulse animation every 420 ms.
-  - stronger red/purple rift styling.
+Equipment modifiers
+-------------------
+- Boss modifiers are computed in getBossBattleModifiers(game).
+- Source stats are getShipStats(game), which sums equipped module stats.
+- Module stat names:
+  - damage.
+  - accuracy.
+  - shielding.
+  - armor.
+  - hull.
+  - speed.
+  - utility.
+- playerDamageBonus:
+  - min(2, floor(damage / 8)).
+- chargeDamageBonus:
+  - min(2, floor(damage / 12) + floor(utility / 3)).
+- playerMaxHpBonus:
+  - min(3, ceil(hull / 15)).
+- incomingDamageReduction:
+  - min(2, floor((shielding + armor) / 8)).
+- telegraphBonusMs:
+  - min(220, accuracy * 25 + utility * 20).
+- panelLockdownDelayMs:
+  - min(650, utility * 140).
+- moveCooldownMultiplier:
+  - max(0.72, 1 - speed * 0.055).
+- chargeTimeMultiplier:
+  - max(0.78, 1 - accuracy * 0.025).
+- Incoming boss damage after modules:
+  - max(1, projectileDamage - incomingDamageReduction).
 
-Boss phase configuration
-------------------------
+Module impact examples
+----------------------
+- Light Turret:
+  - stats: damage 8, accuracy 4.
+  - boss effects: +1 normal shot damage, faster charge timing, longer telegraphs.
+- Missile Launcher:
+  - stats: damage 16, accuracy 2.
+  - boss effects: +2 normal shot damage, +1 charge damage, slightly faster charge timing, longer telegraphs.
+- Basic Shield Generator:
+  - stats: shielding 5.
+  - boss effects: contributes toward incoming damage reduction.
+- Reinforced Hull Plating:
+  - stats: armor 5, hull 18.
+  - boss effects: contributes toward damage reduction and +2 boss-fight hull.
+- Basic Thrusters:
+  - stats: speed 3, accuracy 1.
+  - boss effects: about 16% faster movement, slightly faster charge timing, longer telegraphs.
+- Survey Scanner:
+  - stats: accuracy 2, utility 2.
+  - boss effects: faster charge timing, longer telegraphs, +280 ms panel lockdown delay.
+- Drone Bay:
+  - stats: utility 3, shielding 1.
+  - boss effects: +1 charge damage, +420 ms panel lockdown delay, longer telegraphs.
+
+Orbital Dock boss
+-----------------
+- Sector id: orbitalDock.
+- Boss id: riftWarden.
+- Name: Rift Warden.
+- Subtitle: Orbital Dock Boss.
+- Encounter name: Grid Boss Encounter.
+- Base boss HP: 20.
+- Base player boss-fight hull: 6.
+- Mechanics shown in UI:
+  - Rift lanes.
+  - Panel lockdown.
+  - Enrage volleys.
+- Victory text:
+  - Rift Warden signal broken. Return to command when ready.
+- Defeat text:
+  - Ship systems disengaged. Return to command when ready.
+- Active hint:
+  - Dodge fixed rift lanes before your panels burn out.
+
+Rift Warden attack pattern
+--------------------------
+- Wide row sequence:
+  - 0, 2, 1, 0, 2, 1, then repeats.
+- Volley row sequence:
+  - [0, 2]
+  - [0, 1]
+  - [1, 2]
+  - [2, 0]
+  - then repeats by special index.
+- Phase 3 rift cadence:
+  - Every 3rd special when specialIndex % 3 == 2.
+- Rift target:
+  - Player row at telegraph creation time.
+  - It does not keep homing after telegraph creation.
+- Phase 3 extra normal bolt:
+  - Enabled.
+  - Every other normal shot fires a second bolt.
+  - Second bolt row = (bossCoreRow + 1) % 3.
+
+Rift Warden phase numbers
+-------------------------
 Phase 1:
+- HP range: above 65%.
+- With 20 HP: 20 through 14 HP.
 - Boss movement cooldown: 560 ms.
 - Boss normal shot cooldown: 760 ms.
 - Boss special cooldown: 3200 ms.
-- Boss special telegraph time: 620 ms.
-- Panel lockdown cooldown: 3000 ms.
+- Boss special telegraph time: 620 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 3000 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 1.
 - Volley bolt damage: 1.
 - Wide attack damage: 4.
 - Rift projectile damage: 3.
 
 Phase 2:
+- HP range: 65% through above 30%.
+- With 20 HP: 13 through 7 HP.
 - Boss movement cooldown: 430 ms.
 - Boss normal shot cooldown: 610 ms.
 - Boss special cooldown: 2700 ms.
-- Boss special telegraph time: 560 ms.
-- Panel lockdown cooldown: 2700 ms.
+- Boss special telegraph time: 560 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 2700 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 1.
 - Volley bolt damage: 1.
 - Wide attack damage: 4.
 - Rift projectile damage: 3.
 
 Phase 3:
+- HP range: 30% and below.
+- With 20 HP: 6 HP and lower.
 - Boss movement cooldown: 320 ms.
 - Boss normal shot cooldown: 500 ms.
 - Boss special cooldown: 2250 ms.
-- Boss special telegraph time: 520 ms.
-- Panel lockdown cooldown: 2400 ms.
+- Boss special telegraph time: 520 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 2400 ms plus panelLockdownDelayMs.
 - Normal bolt damage: 2.
 - Volley bolt damage: 2.
 - Wide attack damage: 5.
 - Rift projectile damage: 3.
+
+Inner Belt boss
+---------------
+- Sector id: innerBelt.
+- Boss id: beltBreaker.
+- Name: Belt Breaker.
+- Subtitle: Inner Belt Boss.
+- Encounter name: Inner Belt Boss.
+- Base boss HP: 26.
+- Base player boss-fight hull: 6.
+- Mechanics shown in UI:
+  - Shrapnel volleys.
+  - Crush beam cycles.
+  - Faster armor phases.
+- Victory text:
+  - Belt Breaker core cracked. Return to command when ready.
+- Defeat text:
+  - Armor breach contained. Return to command when ready.
+- Active hint:
+  - Read the shrapnel rows and keep moving through the Belt Breaker barrage.
+
+Belt Breaker attack pattern
+---------------------------
+- Wide row sequence:
+  - 1, 0, 2, 1, 2, 0, then repeats.
+- Volley row sequence:
+  - [0, 1]
+  - [1, 2]
+  - [0, 2]
+  - [0, 1, 2]
+  - then repeats by special index.
+- Phase 3 rift cadence:
+  - Every 2nd special when specialIndex % 2 == 1.
+- Rift target mode:
+  - cycle.
+- Rift row cycle:
+  - 2, 0, 1, then repeats.
+- Phase 3 extra normal bolt:
+  - Enabled.
+  - Every other normal shot fires a second bolt.
+  - Second bolt row = (bossCoreRow + 1) % 3.
+
+Belt Breaker phase numbers
+--------------------------
+Phase 1:
+- HP range: above 65%.
+- With 26 HP: 26 through 17 HP.
+- Boss movement cooldown: 520 ms.
+- Boss normal shot cooldown: 700 ms.
+- Boss special cooldown: 3000 ms.
+- Boss special telegraph time: 640 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 3100 ms plus panelLockdownDelayMs.
+- Normal bolt damage: 1.
+- Volley bolt damage: 1.
+- Wide attack damage: 4.
+- Rift projectile damage: 3.
+
+Phase 2:
+- HP range: 65% through above 30%.
+- With 26 HP: 16 through 8 HP.
+- Boss movement cooldown: 390 ms.
+- Boss normal shot cooldown: 560 ms.
+- Boss special cooldown: 2550 ms.
+- Boss special telegraph time: 560 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 2700 ms plus panelLockdownDelayMs.
+- Normal bolt damage: 2.
+- Volley bolt damage: 2.
+- Wide attack damage: 5.
+- Rift projectile damage: 4.
+
+Phase 3:
+- HP range: 30% and below.
+- With 26 HP: 7 HP and lower.
+- Boss movement cooldown: 290 ms.
+- Boss normal shot cooldown: 460 ms.
+- Boss special cooldown: 2050 ms.
+- Boss special telegraph time: 500 ms plus telegraphBonusMs.
+- Panel lockdown cooldown: 2250 ms plus panelLockdownDelayMs.
+- Normal bolt damage: 2.
+- Volley bolt damage: 2.
+- Wide attack damage: 6.
+- Rift projectile damage: 4.
 
 Boss movement
 -------------
@@ -249,101 +335,14 @@ Boss movement
   - Left by 1 local column.
   - Right by 1 local column.
 - No diagonal boss movement.
-- No fixed row pattern.
-- No intentional stay-in-place option unless no valid step exists, which cannot happen in a 3x3 grid.
-- Boss cannot leave its local 3x3 grid:
-  - local col must be 0, 1, or 2.
-  - local row must be 0, 1, or 2.
+- Boss cannot leave its local 3x3 grid.
 
-Boss normal firing
-------------------
-- Boss fires only while battle status is active.
-- Boss does not fire normal shots while any special telegraph is pending.
-- Normal projectile:
-  - kind: bolt.
-  - owner: boss.
-  - row: current boss row at fire time.
-  - start x: 3 + bossCoreCol + 0.24.
-  - speed: -0.0055 grid columns per ms to the left.
-  - damage: phase normal bolt damage.
-- Phase 3 enhancement:
-  - Every other normal shot also fires a second bolt.
-  - Second bolt row = (bossCoreRow + 1) % 3.
-- Boss normal projectiles are removed after player contact.
-- Boss normal projectiles are removed if x < -0.8.
-
-Boss wide special
------------------
-- Special type: wide.
-- Available in all phases.
-- Wide attack row sequence:
-  - 0, 2, 1, 0, 2, 1, then repeats.
-- The row is chosen from that sequence, not continuously homed to the player.
-- Telegraph:
-  - CSS classes: boss-telegraph wide.
-  - Covers one full grid row.
-  - Height: 100 / 3 percent.
-  - Top: row / 3 * 100 percent.
-  - Full width: 100%.
-  - Animation: boss-telegraph-pulse, 420 ms, steps(2, end), infinite.
-- Wide projectile:
-  - kind: wide.
-  - owner: boss.
-  - row: telegraphed row.
-  - start x: 5.7.
-  - speed: -0.009 grid columns per ms to the left.
-  - damage: phase wide damage.
-- Wide fire creates rift particles and strong screen shake.
-
-Boss volley special
--------------------
-- Special type: volley.
-- Available in Phase 2 and Phase 3.
-- Selected on alternating eligible specials unless the Phase 3 rift rule takes priority.
-- Volley row patterns:
-  - [0, 2]
-  - [0, 1]
-  - [1, 2]
-  - [2, 0]
-  - then repeats by special index.
-- Telegraph:
-  - CSS classes: boss-telegraph volley.
-  - Shows each affected row before the bolts fire.
-- Volley projectiles:
-  - kind: bolt.
-  - owner: boss.
-  - rows: telegraphed rows.
-  - start x: 3 + bossCoreCol + 0.24.
-  - speed: -0.0055 grid columns per ms to the left.
-  - damage: phase volley damage.
-
-Boss rift special
------------------
-- Special type: rift.
-- Available only in Phase 3.
-- Selected when specialAttackIndex % 3 == 2.
-- Rift target row is the player's current row at telegraph creation time.
-- The rift does not home after it is telegraphed.
-- Telegraph:
-  - CSS classes: boss-telegraph rift.
-  - Purple/red rift styling.
-  - Animation: rift-telegraph-pulse, 260 ms, steps(2, end), infinite.
-- Rift projectile:
-  - kind: rift.
-  - owner: boss.
-  - row: telegraphed row.
-  - start x: 5.64.
-  - speed: -0.0048 grid columns per ms to the left.
-  - damage: 3 player hull.
-- Rift fire creates rift particles and strong screen shake.
-
-Panel lockdown special
-----------------------
+Panel lockdown
+--------------
 - Panel lockdown is separate from the boss special cooldown.
 - It randomly disables one currently usable player-zone panel.
 - It can target any open panel from the player's 3x3 area.
 - Disabled panels are permanent for the current fight.
-- Disabled panels are tracked as { col, row }.
 - Disabled panels block player movement.
 - Max disabled panels: 8 of 9.
 - If the newly disabled panel is the player's current panel:
@@ -353,22 +352,15 @@ Panel lockdown special
 - A disabled panel increments panelsDisabled.
 - A disabled panel creates rift particles and light screen shake.
 
-Projectile movement and frame timing
-------------------------------------
+Projectile movement and hitboxes
+--------------------------------
 - Main animation loop uses requestAnimationFrame.
 - Per-frame delta:
-  - previous frame timestamp is tracked.
   - deltaMs = min(40, now - previous).
 - Projectile update:
   - next x = current x + projectile.speed * deltaMs.
-- Projectile center:
-  - centerX = projectile.x + 0.5.
-  - centerY = projectile.row + 0.5.
 - Projectile row never changes after creation.
 - Boss attacks are straight-line projectiles, not homing projectiles.
-
-Hitboxes
---------
 - Collision is based on ship/projectile overlap, not panel occupancy alone.
 - Player ship hitbox:
   - centerX = playerCol + 0.5.
@@ -392,63 +384,9 @@ Hitboxes
 - Rift projectile hitbox:
   - halfWidth = 0.20.
   - halfHeight = 0.12.
-- Overlap rule:
-  - abs(a.centerX - b.centerX) <= a.halfWidth + b.halfWidth.
-  - abs(a.centerY - b.centerY) <= a.halfHeight + b.halfHeight.
 
-Visual feedback
----------------
-- Player hit on boss:
-  - Normal hit sets bossDamageFlashMs to at least 160 ms.
-  - Charge hit sets bossDamageFlashMs to at least 260 ms.
-  - Normal hit creates spark particles.
-  - Charge hit creates burst particles.
-  - Normal hit sets screenShake to at least 0.34.
-  - Charge hit sets screenShake to at least 0.70.
-- Boss hit on player:
-  - Bolt hit creates spark particles.
-  - Wide or rift hit creates larger spark bursts.
-  - Bolt hit sets screenShake to at least 0.46.
-  - Wide or rift hit sets screenShake to at least 0.90.
-- Wide fire sets screenShake to at least 0.72.
-- Rift fire sets screenShake to at least 0.82.
-- Win sets screenShake to at least 1.00.
-- Retreat / loss sets screenShake to at least 0.42.
-- Screen shake decay rate:
-  - screenShake decreases by deltaMs / 260 each active frame.
-- Particle limit:
-  - Maximum retained particles: 100.
-- Particle kinds:
-  - spark.
-  - burst.
-  - trail.
-  - rift.
-  - core.
-- Particle lifetimes:
-  - trail: 220 ms.
-  - spark: 420 ms.
-  - burst: 420 ms.
-  - rift: 520 ms.
-  - core: 760 ms.
-- Projectiles can emit trail/rift particles during movement:
-  - charge or rift chance: 0.65 per projectile update.
-  - wide chance: 0.42 per projectile update.
-  - bolt chance: 0.22 per projectile update.
-
-Music
------
-- Music starts only while battle status is active and musicMuted is false.
-- Music stops when muted or when battle leaves active status.
-- The mute button uses lucide-react Mic and MicOff icons.
-- Master gain: 0.055.
-- Step interval: 185 ms.
-- Bass line:
-  - 55, 55, 65.41, 55, 82.41, 73.42, 65.41, 49.
-- Lead line:
-  - 220, 246.94, 293.66, 329.63, 293.66, 246.94, 196, 164.81.
-
-End flow and stats
-------------------
+End screen stats
+----------------
 - Battle ends when bossHp <= 0 or playerHp <= 0.
 - Retreat also ends the battle as loss.
 - The player is not auto-returned to the homescreen.
@@ -462,26 +400,9 @@ End flow and stats
   - Panels disabled.
   - Charge hits.
   - Rating.
-- Footer also shows a compact Home button after the battle ends.
-- Pressing Home calls onComplete("win") or onComplete("loss").
-- App.tsx clears bossBattleId and returns to the main homescreen.
-- Stats:
-  - startedAt is set on the first active frame.
-  - endedAt is set when finishBattle() runs.
-  - shotsFired increments when a player projectile is created.
-  - shotsHit increments when a player projectile contacts the boss.
-  - damageDealt is actual boss HP removed.
-  - damageTaken is total player hull damage received.
-  - panelsDisabled increments when a panel is locked.
-- Accuracy:
-  - shotsHit / shotsFired.
-  - 0 if shotsFired is 0.
-- Duration:
-  - endedAt - startedAt.
-  - Display format is seconds under 1 minute, or M:SS at 1 minute and above.
 - Rating:
   - S: win, accuracy >= 70%, damageTaken <= 2, duration <= 45 seconds.
   - A: win, accuracy >= 50%.
   - B: any other win.
-  - C: loss with damageDealt >= 10.
+  - C: loss with damageDealt >= half of that boss's max HP.
   - D: any other loss.

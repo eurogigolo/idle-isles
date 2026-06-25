@@ -1,13 +1,15 @@
 import { Mic, MicOff } from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
+import type { BossBattleModifiers, BossPhase, SectorBoss } from './bosses'
 
 export type GridBossResult = 'win' | 'loss'
 
 interface GridBossBattleProps {
+  boss: SectorBoss
+  modifiers: BossBattleModifiers
   onComplete: (result: GridBossResult) => void
 }
 
-type BossPhase = 1 | 2 | 3
 type ProjectileKind = 'bolt' | 'charge' | 'wide' | 'rift'
 type TelegraphKind = 'wide' | 'volley' | 'rift'
 type ParticleKind = 'spark' | 'burst' | 'trail' | 'rift' | 'core'
@@ -83,8 +85,6 @@ const COLUMNS = 6
 const PLAYER_COLUMNS = 3
 const PLAYER_PANEL_COUNT = ROWS * PLAYER_COLUMNS
 const BOSS_ZONE_START = PLAYER_COLUMNS
-const PLAYER_MAX_HP = 6
-const BOSS_MAX_HP = 20
 const PLAYER_MOVE_COOLDOWN_MS = 95
 const PLAYER_SHOT_COOLDOWN_MS = 220
 const PLAYER_CHARGE_MIN_MS = 360
@@ -108,63 +108,6 @@ const WIDE_HITBOX = { halfHeight: 0.22, halfWidth: 0.46 }
 const RIFT_HITBOX = { halfHeight: 0.12, halfWidth: 0.2 }
 const PARTICLE_LIMIT = 100
 
-const WIDE_ATTACK_ROWS = [0, 2, 1, 0, 2, 1]
-const VOLLEY_ATTACK_ROWS = [
-  [0, 2],
-  [0, 1],
-  [1, 2],
-  [2, 0],
-]
-
-const BOSS_PHASE_CONFIG: Record<
-  BossPhase,
-  {
-    boltDamage: number
-    movementCooldownMs: number
-    panelCooldownMs: number
-    riftDamage: number
-    shotCooldownMs: number
-    specialCooldownMs: number
-    telegraphMs: number
-    volleyDamage: number
-    wideDamage: number
-  }
-> = {
-  1: {
-    boltDamage: 1,
-    movementCooldownMs: 560,
-    panelCooldownMs: 3000,
-    riftDamage: 3,
-    shotCooldownMs: 760,
-    specialCooldownMs: 3200,
-    telegraphMs: 620,
-    volleyDamage: 1,
-    wideDamage: 4,
-  },
-  2: {
-    boltDamage: 1,
-    movementCooldownMs: 430,
-    panelCooldownMs: 2700,
-    riftDamage: 3,
-    shotCooldownMs: 610,
-    specialCooldownMs: 2700,
-    telegraphMs: 560,
-    volleyDamage: 1,
-    wideDamage: 4,
-  },
-  3: {
-    boltDamage: 2,
-    movementCooldownMs: 320,
-    panelCooldownMs: 2400,
-    riftDamage: 3,
-    shotCooldownMs: 500,
-    specialCooldownMs: 2250,
-    telegraphMs: 520,
-    volleyDamage: 2,
-    wideDamage: 5,
-  },
-}
-
 const CONTROL_KEYS = new Set([
   'ArrowUp',
   'ArrowDown',
@@ -182,19 +125,24 @@ const CONTROL_KEYS = new Set([
   'Enter',
 ])
 
-export function GridBossBattle({ onComplete }: GridBossBattleProps) {
+export function GridBossBattle({ boss, modifiers, onComplete }: GridBossBattleProps) {
+  const [battleBoss] = useState(() => boss)
+  const [battleModifiers] = useState(() => modifiers)
+  const playerMaxHp = getPlayerMaxHp(battleBoss, battleModifiers)
+  const chargeMinMs = getChargeMinMs(battleModifiers)
+  const chargeMaxMs = getChargeMaxMs(battleModifiers)
   const [battle, setBattle] = useState<BattleState>({
     bossDamageFlashMs: 0,
     bossCoreCol: 1,
     bossCoreRow: 1,
-    bossHp: BOSS_MAX_HP,
+    bossHp: battleBoss.maxHp,
     bossPhase: 1,
     disabledPanels: [],
     particles: [],
     phaseFlashMs: 0,
     playerChargeMs: 0,
     playerCol: 1,
-    playerHp: PLAYER_MAX_HP,
+    playerHp: playerMaxHp,
     playerRow: 1,
     projectiles: [],
     screenShake: 0,
@@ -342,7 +290,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     keys: Set<string>,
     now: number,
   ): BattleState {
-    if (now - lastMoveAt.current < PLAYER_MOVE_COOLDOWN_MS) return current
+    if (now - lastMoveAt.current < PLAYER_MOVE_COOLDOWN_MS * battleModifiers.moveCooldownMultiplier) return current
 
     const up = keys.has('ArrowUp') || keys.has('w') || keys.has('W')
     const down = keys.has('ArrowDown') || keys.has('s') || keys.has('S')
@@ -375,7 +323,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         chargeStartedAt.current = now
       }
 
-      const playerChargeMs = Math.min(PLAYER_CHARGE_MAX_MS, now - chargeStartedAt.current)
+      const playerChargeMs = Math.min(chargeMaxMs, now - chargeStartedAt.current)
       return playerChargeMs === current.playerChargeMs ? current : { ...current, playerChargeMs }
     }
 
@@ -383,8 +331,8 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       return current.playerChargeMs > 0 ? { ...current, playerChargeMs: 0 } : current
     }
 
-    const chargeMs = Math.min(PLAYER_CHARGE_MAX_MS, now - chargeStartedAt.current)
-    const charged = chargeMs >= PLAYER_CHARGE_MIN_MS
+    const chargeMs = Math.min(chargeMaxMs, now - chargeStartedAt.current)
+    const charged = chargeMs >= chargeMinMs
     const cooldown = charged ? PLAYER_CHARGE_COOLDOWN_MS : PLAYER_SHOT_COOLDOWN_MS
     chargeStartedAt.current = null
 
@@ -392,7 +340,9 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       return { ...current, playerChargeMs: 0 }
     }
 
-    const damage = charged ? getChargeShotDamage(chargeMs) : PLAYER_BOLT_DAMAGE
+    const damage = charged
+      ? getChargeShotDamage(chargeMs, battleModifiers)
+      : PLAYER_BOLT_DAMAGE + battleModifiers.playerDamageBonus
     const projectileKind: ProjectileKind = charged ? 'charge' : 'bolt'
 
     lastPlayerShotAt.current = now
@@ -424,7 +374,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   }
 
   function applyBossMovement(current: BattleState, now: number): BattleState {
-    const config = BOSS_PHASE_CONFIG[current.bossPhase]
+    const config = battleBoss.phaseConfig[current.bossPhase]
     if (now - lastBossMoveAt.current < config.movementCooldownMs) return current
 
     lastBossMoveAt.current = now
@@ -439,7 +389,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
 
   function applyBossFire(current: BattleState, now: number): BattleState {
     if (current.telegraphs.length > 0) return current
-    const config = BOSS_PHASE_CONFIG[current.bossPhase]
+    const config = battleBoss.phaseConfig[current.bossPhase]
 
     if (now - lastBossSpecialAt.current >= config.specialCooldownMs) {
       lastBossSpecialAt.current = now
@@ -449,14 +399,18 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       let kind: TelegraphKind = 'wide'
       let rows: number[]
 
-      if (current.bossPhase === 3 && specialIndex % 3 === 2) {
+      if (
+        current.bossPhase === 3 &&
+        battleBoss.attackPattern.phaseThreeRiftEvery > 0 &&
+        specialIndex % battleBoss.attackPattern.phaseThreeRiftEvery === battleBoss.attackPattern.phaseThreeRiftEvery - 1
+      ) {
         kind = 'rift'
-        rows = [current.playerRow]
+        rows = [getRiftTargetRow(battleBoss, current, specialIndex)]
       } else if (current.bossPhase >= 2 && specialIndex % 2 === 1) {
         kind = 'volley'
-        rows = VOLLEY_ATTACK_ROWS[specialIndex % VOLLEY_ATTACK_ROWS.length]
+        rows = battleBoss.attackPattern.volleyRows[specialIndex % battleBoss.attackPattern.volleyRows.length]
       } else {
-        rows = [WIDE_ATTACK_ROWS[wideAttackIndex.current % WIDE_ATTACK_ROWS.length]]
+        rows = [battleBoss.attackPattern.wideRows[wideAttackIndex.current % battleBoss.attackPattern.wideRows.length]]
         wideAttackIndex.current += 1
       }
 
@@ -467,7 +421,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         telegraphs: [
           ...current.telegraphs,
           {
-            fireAt: now + config.telegraphMs,
+            fireAt: now + config.telegraphMs + battleModifiers.telegraphBonusMs,
             id: telegraphId.current++,
             kind,
             rows,
@@ -480,7 +434,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
 
     lastBossShotAt.current = now
     const rows = [current.bossCoreRow]
-    if (current.bossPhase === 3 && normalShotIndex.current % 2 === 1) {
+    if (current.bossPhase === 3 && battleBoss.attackPattern.phaseThreeExtraBolt && normalShotIndex.current % 2 === 1) {
       rows.push((current.bossCoreRow + 1) % ROWS)
     }
     normalShotIndex.current += 1
@@ -505,7 +459,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   function applyTelegraphs(current: BattleState, now: number): BattleState {
     if (current.telegraphs.length === 0) return current
 
-    const config = BOSS_PHASE_CONFIG[current.bossPhase]
+    const config = battleBoss.phaseConfig[current.bossPhase]
     const pending: Telegraph[] = []
     const projectiles = [...current.projectiles]
     let particles = current.particles
@@ -574,8 +528,8 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   }
 
   function applyPanelLockdown(current: BattleState, now: number): BattleState {
-    const config = BOSS_PHASE_CONFIG[current.bossPhase]
-    if (now - lastPanelLockdownAt.current < config.panelCooldownMs) return current
+    const config = battleBoss.phaseConfig[current.bossPhase]
+    if (now - lastPanelLockdownAt.current < config.panelCooldownMs + battleModifiers.panelLockdownDelayMs) return current
     if (current.disabledPanels.length >= MAX_DISABLED_PLAYER_PANELS) return current
 
     const panel = getRandomPanelLockdownTarget(current.disabledPanels)
@@ -652,7 +606,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           )
           screenShake = Math.max(screenShake, nextProjectile.kind === 'charge' ? 0.7 : 0.34)
 
-          const nextPhase = getBossPhase(bossHp)
+          const nextPhase = getBossPhase(bossHp, battleBoss)
           if (nextPhase !== bossPhase) {
             bossPhase = nextPhase
             phaseFlashMs = Math.max(phaseFlashMs, 780)
@@ -670,8 +624,9 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       }
 
       if (projectileHitsPlayer(nextProjectile, current)) {
-        playerHp -= nextProjectile.damage
-        stats.damageTaken += nextProjectile.damage
+        const damageTaken = reduceIncomingDamage(nextProjectile.damage, battleModifiers)
+        playerHp -= damageTaken
+        stats.damageTaken += damageTaken
         particles = addParticles(
           particles,
           createParticleBurst('spark', current.playerCol + 0.5, current.playerRow + 0.5, nextProjectile.kind === 'bolt' ? 8 : 14),
@@ -833,14 +788,14 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   const resultTitle = battle.status === 'won' ? 'Victory' : battle.status === 'lost' ? 'Retreat' : ''
   const resultText =
     battle.status === 'won'
-      ? 'Rift Warden signal broken. Return to command when ready.'
+      ? battleBoss.victoryText
       : battle.status === 'lost'
-        ? 'Ship systems disengaged. Return to command when ready.'
+        ? battleBoss.defeatText
         : battle.status === 'countdown'
           ? 'Grid sync starting.'
-          : 'Dodge fixed fire lanes before your panels burn out.'
+          : battleBoss.activeHint
   const battleEnded = battle.status === 'won' || battle.status === 'lost'
-  const chargeProgress = Math.min(1, battle.playerChargeMs / PLAYER_CHARGE_MAX_MS)
+  const chargeProgress = Math.min(1, battle.playerChargeMs / chargeMaxMs)
   const footerText =
     battle.status === 'active' && battle.playerChargeMs > 0
       ? chargeProgress >= 1
@@ -861,7 +816,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   } as CSSProperties
   const resultDurationMs = getBattleDurationMs(battle.stats)
   const resultAccuracy = getAccuracy(battle.stats)
-  const resultRating = getPerformanceRating(battle.status, battle.stats)
+  const resultRating = getPerformanceRating(battle.status, battle.stats, battleBoss.maxHp)
 
   return (
     <div
@@ -873,12 +828,12 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       <div className={shellClassName}>
         <div className="grid-boss-header">
           <div>
-            <span className="eyebrow">Grid Boss Encounter</span>
-            <h2>Rift Warden</h2>
+            <span className="eyebrow">{battleBoss.encounterName}</span>
+            <h2>{battleBoss.name}</h2>
           </div>
           <div className="grid-boss-readout">
-            <span>Hull {battle.playerHp}/{PLAYER_MAX_HP}</span>
-            <span>Boss {battle.bossHp}/{BOSS_MAX_HP}</span>
+            <span>Hull {battle.playerHp}/{playerMaxHp}</span>
+            <span>Boss {battle.bossHp}/{battleBoss.maxHp}</span>
             <span>Phase {battle.bossPhase}</span>
             <span>Panels {PLAYER_PANEL_COUNT - battle.disabledPanels.length}/{PLAYER_PANEL_COUNT}</span>
             {battle.status === 'active' && (
@@ -890,8 +845,8 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         </div>
 
         <div className="grid-boss-bars" aria-hidden="true">
-          <span style={{ width: `${(battle.playerHp / PLAYER_MAX_HP) * 100}%` }} />
-          <span style={{ width: `${(battle.bossHp / BOSS_MAX_HP) * 100}%` }} />
+          <span style={{ width: `${(battle.playerHp / playerMaxHp) * 100}%` }} />
+          <span style={{ width: `${(battle.bossHp / battleBoss.maxHp) * 100}%` }} />
         </div>
 
         <div className={arenaClassName}>
@@ -1112,16 +1067,42 @@ function advanceParticles(particles: BattleParticle[], deltaMs: number): BattleP
     .filter((particle) => particle.ageMs < particle.ttlMs)
 }
 
-function getBossPhase(bossHp: number): BossPhase {
-  const hpRatio = bossHp / BOSS_MAX_HP
+function getBossPhase(bossHp: number, boss: SectorBoss): BossPhase {
+  const hpRatio = bossHp / boss.maxHp
   if (hpRatio <= 0.3) return 3
   if (hpRatio <= 0.65) return 2
   return 1
 }
 
-function getChargeShotDamage(chargeMs: number): number {
-  if (chargeMs >= PLAYER_CHARGE_MAX_MS) return PLAYER_CHARGE_MAX_DAMAGE
-  return PLAYER_CHARGE_MIN_DAMAGE
+function getChargeShotDamage(chargeMs: number, modifiers: BossBattleModifiers): number {
+  if (chargeMs >= getChargeMaxMs(modifiers)) return PLAYER_CHARGE_MAX_DAMAGE + modifiers.chargeDamageBonus
+  return PLAYER_CHARGE_MIN_DAMAGE + modifiers.chargeDamageBonus
+}
+
+function getChargeMaxMs(modifiers: BossBattleModifiers): number {
+  return Math.round(PLAYER_CHARGE_MAX_MS * modifiers.chargeTimeMultiplier)
+}
+
+function getChargeMinMs(modifiers: BossBattleModifiers): number {
+  return Math.round(PLAYER_CHARGE_MIN_MS * modifiers.chargeTimeMultiplier)
+}
+
+function getPlayerMaxHp(boss: SectorBoss, modifiers: BossBattleModifiers): number {
+  return boss.playerMaxHp + modifiers.playerMaxHpBonus
+}
+
+function getRiftTargetRow(boss: SectorBoss, battle: BattleState, specialIndex: number): number {
+  if (boss.attackPattern.riftTarget === 'playerRow') return battle.playerRow
+  if (boss.attackPattern.riftTarget === 'bossRow') return battle.bossCoreRow
+
+  const rows = boss.attackPattern.riftRows && boss.attackPattern.riftRows.length > 0
+    ? boss.attackPattern.riftRows
+    : [0, 1, 2]
+  return rows[specialIndex % rows.length]
+}
+
+function reduceIncomingDamage(damage: number, modifiers: BossBattleModifiers): number {
+  return Math.max(1, damage - modifiers.incomingDamageReduction)
 }
 
 function getTrailChance(kind: ProjectileKind): number {
@@ -1360,13 +1341,13 @@ function formatDuration(milliseconds: number): string {
   return minutes > 0 ? `${minutes}:${seconds.toString().padStart(2, '0')}` : `${seconds}s`
 }
 
-function getPerformanceRating(status: BattleState['status'], stats: BattleStats): string {
+function getPerformanceRating(status: BattleState['status'], stats: BattleStats, bossMaxHp: number): string {
   const accuracy = getAccuracy(stats)
   const durationSeconds = getBattleDurationMs(stats) / 1000
 
   if (status === 'won' && accuracy >= 0.7 && stats.damageTaken <= 2 && durationSeconds <= 45) return 'S'
   if (status === 'won' && accuracy >= 0.5) return 'A'
   if (status === 'won') return 'B'
-  if (stats.damageDealt >= Math.ceil(BOSS_MAX_HP * 0.5)) return 'C'
+  if (stats.damageDealt >= Math.ceil(bossMaxHp * 0.5)) return 'C'
   return 'D'
 }
