@@ -2078,6 +2078,46 @@ select {
   width: min(64rem, 100%);
 }
 
+.grid-boss-shell.shake-light {
+  animation: grid-boss-shake-light 160ms linear;
+}
+
+.grid-boss-shell.shake-strong {
+  animation: grid-boss-shake-strong 220ms linear;
+}
+
+@keyframes grid-boss-shake-light {
+  20% {
+    transform: translate(2px, -1px);
+  }
+
+  55% {
+    transform: translate(-2px, 1px);
+  }
+
+  80% {
+    transform: translate(1px, 1px);
+  }
+}
+
+@keyframes grid-boss-shake-strong {
+  18% {
+    transform: translate(5px, -3px);
+  }
+
+  42% {
+    transform: translate(-6px, 3px);
+  }
+
+  68% {
+    transform: translate(4px, 4px);
+  }
+
+  86% {
+    transform: translate(-2px, -2px);
+  }
+}
+
 .grid-boss-header,
 .grid-boss-footer {
   display: flex;
@@ -2152,6 +2192,69 @@ select {
   box-shadow:
     inset 0 0 44px rgba(110, 198, 255, 0.08),
     0 24px 58px rgba(0, 0, 0, 0.4);
+}
+
+.grid-boss-arena::before,
+.grid-boss-arena::after {
+  position: absolute;
+  content: "";
+  inset: 0;
+  pointer-events: none;
+}
+
+.grid-boss-arena::before {
+  z-index: 1;
+  background:
+    linear-gradient(90deg, transparent 0 49.7%, rgba(110, 198, 255, 0.2) 49.7% 50.3%, transparent 50.3%),
+    linear-gradient(0deg, transparent 0 32.9%, rgba(136, 166, 196, 0.08) 32.9% 33.4%, transparent 33.4% 66.2%, rgba(136, 166, 196, 0.08) 66.2% 66.7%, transparent 66.7%);
+  mix-blend-mode: screen;
+}
+
+.grid-boss-arena::after {
+  z-index: 3;
+  opacity: 0;
+  background:
+    repeating-linear-gradient(
+      95deg,
+      transparent 0 1.35rem,
+      rgba(168, 105, 255, 0.16) 1.35rem 1.48rem,
+      transparent 1.48rem 2.4rem
+    );
+}
+
+.grid-boss-shell.rift-active .grid-boss-arena::after,
+.grid-boss-arena.phase-3::after {
+  opacity: 0.8;
+  animation: rift-scan 760ms steps(3, end) infinite;
+}
+
+.grid-boss-arena.phase-2 {
+  border-color: rgba(255, 170, 77, 0.42);
+  box-shadow:
+    inset 0 0 48px rgba(255, 170, 77, 0.08),
+    0 24px 58px rgba(0, 0, 0, 0.4);
+}
+
+.grid-boss-arena.phase-3 {
+  border-color: rgba(255, 111, 97, 0.58);
+  box-shadow:
+    inset 0 0 54px rgba(255, 111, 97, 0.12),
+    0 0 36px rgba(168, 105, 255, 0.18),
+    0 24px 58px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes rift-scan {
+  0% {
+    transform: translateX(-0.35rem) skewX(-4deg);
+  }
+
+  50% {
+    transform: translateX(0.4rem) skewX(5deg);
+  }
+
+  100% {
+    transform: translateX(-0.1rem) skewX(-2deg);
+  }
 }
 
 .grid-panel {
@@ -2243,7 +2346,9 @@ select {
     drop-shadow(-0.55rem 0 8px rgba(80, 210, 156, 0.26));
   transition:
     left 95ms linear,
-    top 95ms linear;
+    top 95ms linear,
+    filter 120ms ease,
+    transform 120ms ease;
 }
 
 .player-ship::before,
@@ -2272,6 +2377,41 @@ select {
   filter: blur(1px);
 }
 
+.player-ship.charging {
+  filter:
+    drop-shadow(0 0 28px rgba(110, 198, 255, 0.84))
+    drop-shadow(-0.7rem 0 10px rgba(80, 210, 156, 0.36));
+  transform: translate(-50%, -50%) scale(1.04);
+}
+
+.player-ship.charged {
+  background:
+    radial-gradient(circle at 62% 50%, rgba(255, 255, 255, 1) 0 8%, transparent 9%),
+    linear-gradient(90deg, #20344c 0 18%, #bff6ff 18% 56%, #50d29c 56% 72%, #fff7d8 72%),
+    #bff6ff;
+  animation: charged-ship-pulse 540ms ease-in-out infinite;
+}
+
+.player-charge-ring {
+  position: absolute;
+  inset: -18%;
+  border: 2px solid rgba(191, 246, 255, 0.72);
+  border-radius: 999px;
+  opacity: var(--charge-progress);
+  transform: scale(0.92);
+  box-shadow:
+    0 0 16px rgba(110, 198, 255, 0.46),
+    inset 0 0 10px rgba(80, 210, 156, 0.26);
+}
+
+@keyframes charged-ship-pulse {
+  50% {
+    filter:
+      drop-shadow(0 0 34px rgba(191, 246, 255, 0.95))
+      drop-shadow(-0.75rem 0 12px rgba(80, 210, 156, 0.52));
+  }
+}
+
 .boss-entity {
   z-index: 4;
   width: clamp(3.1rem, 8vw, 5.1rem);
@@ -2290,6 +2430,58 @@ select {
   transition:
     left 170ms ease-out,
     top 170ms ease-out;
+}
+
+.boss-entity.phase-2 {
+  border-color: rgba(255, 210, 128, 0.58);
+  box-shadow:
+    inset 0 0 26px rgba(255, 238, 194, 0.2),
+    0 0 38px rgba(255, 170, 77, 0.34);
+}
+
+.boss-entity.phase-3 {
+  border-color: rgba(255, 111, 97, 0.78);
+  background:
+    radial-gradient(circle at 36% 50%, rgba(255, 255, 255, 0.96) 0 13%, transparent 14%),
+    linear-gradient(90deg, rgba(255, 210, 128, 0.9), rgba(255, 75, 94, 0.84) 64%, rgba(74, 24, 64, 0.92)),
+    #2a1720;
+  animation: boss-enrage-pulse 620ms ease-in-out infinite;
+}
+
+.boss-entity.damaged {
+  filter:
+    brightness(1.7)
+    drop-shadow(0 0 18px rgba(255, 238, 194, 0.72));
+}
+
+.boss-entity.phase-shift {
+  animation:
+    boss-phase-shift 460ms steps(2, end) 1,
+    boss-enrage-pulse 620ms ease-in-out infinite;
+}
+
+@keyframes boss-enrage-pulse {
+  50% {
+    box-shadow:
+      inset 0 0 30px rgba(255, 238, 194, 0.28),
+      0 0 48px rgba(255, 111, 97, 0.42),
+      0 0 20px rgba(168, 105, 255, 0.26);
+  }
+}
+
+@keyframes boss-phase-shift {
+  0%,
+  100% {
+    transform: translate(-50%, -50%);
+  }
+
+  40% {
+    transform: translate(calc(-50% - 0.18rem), calc(-50% + 0.08rem)) skewX(-8deg);
+  }
+
+  70% {
+    transform: translate(calc(-50% + 0.16rem), calc(-50% - 0.1rem)) skewX(6deg);
+  }
 }
 
 .boss-core,
@@ -2311,6 +2503,20 @@ select {
   transform: translate(-50%, -50%);
 }
 
+.boss-entity.phase-3 .boss-core {
+  animation: boss-core-pulse 420ms ease-in-out infinite;
+}
+
+@keyframes boss-core-pulse {
+  50% {
+    transform: translate(-50%, -50%) scale(1.16);
+    box-shadow:
+      0 0 24px rgba(255, 238, 194, 0.92),
+      0 0 36px rgba(255, 111, 97, 0.48),
+      inset 0 0 12px rgba(255, 255, 255, 0.34);
+  }
+}
+
 .boss-cannon {
   left: 10%;
   top: 50%;
@@ -2324,19 +2530,34 @@ select {
 
 .grid-projectile {
   z-index: 6;
-  width: 1.15rem;
-  height: 0.42rem;
+  width: 1.35rem;
+  height: 0.5rem;
   border-radius: 999px;
 }
 
 .grid-projectile.player {
-  background: #bff6ff;
-  box-shadow: 0 0 14px rgba(110, 198, 255, 0.8);
+  background: linear-gradient(90deg, #ffffff, #bff6ff 45%, #6ec6ff);
+  box-shadow:
+    0 0 16px rgba(110, 198, 255, 0.86),
+    -0.8rem 0 12px rgba(80, 210, 156, 0.24);
+}
+
+.grid-projectile.player.charge {
+  width: 2.05rem;
+  height: 0.78rem;
+  background:
+    radial-gradient(circle at 78% 50%, #ffffff 0 18%, transparent 19%),
+    linear-gradient(90deg, rgba(80, 210, 156, 0.16), #bff6ff 28%, #50d29c);
+  box-shadow:
+    0 0 24px rgba(191, 246, 255, 0.98),
+    0 0 40px rgba(80, 210, 156, 0.44);
 }
 
 .grid-projectile.boss {
-  background: #ffd8a6;
-  box-shadow: 0 0 14px rgba(255, 170, 77, 0.8);
+  background: linear-gradient(90deg, #ffd8a6, #ff9f5c);
+  box-shadow:
+    0 0 16px rgba(255, 170, 77, 0.86),
+    0.8rem 0 12px rgba(255, 111, 97, 0.2);
 }
 
 .grid-projectile.boss.wide {
@@ -2347,6 +2568,18 @@ select {
   box-shadow:
     0 0 20px rgba(255, 170, 77, 0.86),
     0 0 42px rgba(255, 111, 97, 0.36);
+}
+
+.grid-projectile.boss.rift {
+  width: 2.3rem;
+  height: 1.08rem;
+  border-radius: 42% 999px 999px 42%;
+  background:
+    radial-gradient(circle at 36% 50%, #fff7d8 0 16%, transparent 17%),
+    linear-gradient(90deg, #ff6f61, #a869ff 52%, rgba(79, 30, 116, 0.96));
+  box-shadow:
+    0 0 22px rgba(255, 111, 97, 0.78),
+    0 0 44px rgba(168, 105, 255, 0.42);
 }
 
 .boss-telegraph {
@@ -2364,10 +2597,85 @@ select {
   animation: boss-telegraph-pulse 420ms steps(2, end) infinite;
 }
 
+.boss-telegraph.volley {
+  border-block-color: rgba(255, 216, 166, 0.5);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 216, 166, 0.2) 0 0.22rem,
+      rgba(255, 170, 77, 0.04) 0.22rem 0.8rem
+    );
+}
+
+.boss-telegraph.rift {
+  border-block-color: rgba(168, 105, 255, 0.74);
+  background:
+    linear-gradient(90deg, rgba(255, 111, 97, 0.22), rgba(168, 105, 255, 0.18), rgba(255, 111, 97, 0.1)),
+    repeating-linear-gradient(
+      115deg,
+      transparent 0 0.8rem,
+      rgba(191, 246, 255, 0.14) 0.8rem 0.95rem,
+      transparent 0.95rem 1.5rem
+    );
+  box-shadow:
+    inset 0 0 30px rgba(168, 105, 255, 0.22),
+    0 0 22px rgba(255, 111, 97, 0.24);
+  animation: rift-telegraph-pulse 260ms steps(2, end) infinite;
+}
+
 @keyframes boss-telegraph-pulse {
   50% {
     opacity: 0.36;
   }
+}
+
+@keyframes rift-telegraph-pulse {
+  50% {
+    opacity: 0.22;
+    transform: skewX(-7deg);
+  }
+}
+
+.grid-particle {
+  position: absolute;
+  z-index: 7;
+  width: var(--particle-size);
+  height: var(--particle-size);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.grid-particle.spark {
+  background: #fff7d8;
+  box-shadow:
+    0 0 10px rgba(255, 238, 194, 0.92),
+    0 0 18px rgba(255, 170, 77, 0.46);
+}
+
+.grid-particle.burst {
+  background: #bff6ff;
+  box-shadow:
+    0 0 14px rgba(191, 246, 255, 0.96),
+    0 0 24px rgba(80, 210, 156, 0.38);
+}
+
+.grid-particle.trail {
+  background: rgba(110, 198, 255, 0.7);
+  filter: blur(1px);
+}
+
+.grid-particle.rift {
+  background: #a869ff;
+  box-shadow:
+    0 0 14px rgba(168, 105, 255, 0.8),
+    0 0 24px rgba(255, 111, 97, 0.3);
+}
+
+.grid-particle.core {
+  background: #ffdf9a;
+  box-shadow:
+    0 0 18px rgba(255, 238, 194, 0.96),
+    0 0 34px rgba(255, 111, 97, 0.48);
 }
 
 .grid-boss-result,
@@ -2401,6 +2709,41 @@ select {
 .grid-boss-countdown span {
   color: #a7b7c8;
   font-size: 0.9rem;
+}
+
+.grid-boss-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(5.2rem, 1fr));
+  gap: 0.45rem;
+  width: min(31rem, calc(100vw - 3rem));
+  margin: 0.15rem 0 0.25rem;
+}
+
+.grid-boss-stat-grid div {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(136, 166, 196, 0.2);
+  border-radius: 6px;
+  background: rgba(9, 23, 36, 0.8);
+}
+
+.grid-boss-stat-grid dt,
+.grid-boss-stat-grid dd {
+  margin: 0;
+}
+
+.grid-boss-stat-grid dt {
+  color: #88a6c4;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.grid-boss-stat-grid dd {
+  color: #f2f7ff;
+  font-size: 1rem;
+  font-weight: 900;
 }
 
 @keyframes countdown-pulse {
@@ -2569,6 +2912,10 @@ select {
 
   .grid-boss-arena {
     min-height: 20rem;
+  }
+
+  .grid-boss-stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .boss-encounter-card header {
