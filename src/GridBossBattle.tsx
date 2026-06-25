@@ -58,10 +58,15 @@ const BOSS_SPECIAL_TELEGRAPH_MS = 620
 const PANEL_LOCKDOWN_COOLDOWN_MS = 3000
 const MAX_DISABLED_PLAYER_PANELS = PLAYER_PANEL_COUNT - 1
 const COUNTDOWN_START = 3
-const PLAYER_HITBOX = { halfHeight: 0.24, halfWidth: 0.29 }
-const BOSS_HITBOX = { halfHeight: 0.28, halfWidth: 0.32 }
-const BOLT_HITBOX = { halfHeight: 0.055, halfWidth: 0.13 }
-const WIDE_HITBOX = { halfHeight: 0.28, halfWidth: 0.62 }
+const PLAYER_BOLT_SPEED = 0.011
+const BOSS_BOLT_SPEED = -0.0055
+const BOSS_WIDE_SPEED = -0.009
+const BOSS_BOLT_DAMAGE = 1
+const BOSS_WIDE_DAMAGE = 4
+const PLAYER_HITBOX = { halfHeight: 0.14, halfWidth: 0.18 }
+const BOSS_HITBOX = { halfHeight: 0.2, halfWidth: 0.22 }
+const BOLT_HITBOX = { halfHeight: 0.035, halfWidth: 0.07 }
+const WIDE_HITBOX = { halfHeight: 0.22, halfWidth: 0.46 }
 
 const BOSS_CORE_PATTERN = [
   { col: 1, row: 1 },
@@ -235,7 +240,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           kind: 'bolt',
           owner: 'player',
           row: current.playerRow,
-          speed: 0.022,
+          speed: PLAYER_BOLT_SPEED,
           x: current.playerCol + 0.72,
         },
       ],
@@ -288,7 +293,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           kind: 'bolt',
           owner: 'boss',
           row: current.bossCoreRow,
-          speed: -0.011,
+          speed: BOSS_BOLT_SPEED,
           x: BOSS_ZONE_START + current.bossCoreCol + 0.24,
         },
       ],
@@ -312,7 +317,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         kind: 'wide',
         owner: 'boss',
         row: telegraph.row,
-        speed: -0.018,
+        speed: BOSS_WIDE_SPEED,
         x: COLUMNS - 0.3,
       })
     }
@@ -368,7 +373,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       }
 
       if (projectileHitsPlayer(nextProjectile, current)) {
-        playerHp -= nextProjectile.kind === 'wide' ? 2 : 1
+        playerHp -= nextProjectile.kind === 'wide' ? BOSS_WIDE_DAMAGE : BOSS_BOLT_DAMAGE
         continue
       }
       if (nextProjectile.x < -0.8) continue
