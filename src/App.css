@@ -2075,7 +2075,7 @@ select {
 .grid-boss-shell {
   display: grid;
   gap: 0.75rem;
-  width: min(58rem, 100%);
+  width: min(64rem, 100%);
 }
 
 .grid-boss-header,
@@ -2094,6 +2094,7 @@ select {
 }
 
 .grid-boss-readout {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -2101,7 +2102,8 @@ select {
 }
 
 .grid-boss-readout span,
-.grid-boss-footer > span {
+.grid-boss-footer > span,
+.grid-boss-retreat-button {
   padding: 0.3rem 0.48rem;
   border: 1px solid rgba(136, 166, 196, 0.18);
   border-radius: 5px;
@@ -2109,6 +2111,10 @@ select {
   background: rgba(9, 23, 36, 0.74);
   font-size: 0.78rem;
   font-weight: 800;
+}
+
+.grid-boss-retreat-button {
+  cursor: pointer;
 }
 
 .grid-boss-bars {
@@ -2137,7 +2143,7 @@ select {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-template-rows: repeat(3, minmax(4.2rem, 1fr));
   overflow: hidden;
-  min-height: min(58vh, 28rem);
+  min-height: min(60vh, 31rem);
   border: 1px solid rgba(110, 198, 255, 0.34);
   border-radius: 8px;
   background:
@@ -2175,42 +2181,113 @@ select {
 
 .boss-entity,
 .player-ship,
-.grid-projectile {
+.grid-projectile,
+.boss-telegraph {
   position: absolute;
   pointer-events: none;
+}
+
+.boss-entity,
+.player-ship,
+.grid-projectile {
   transform: translate(-50%, -50%);
 }
 
 .player-ship {
-  width: 2.15rem;
-  height: 1.35rem;
-  clip-path: polygon(0 15%, 74% 0, 100% 50%, 74% 100%, 0 85%, 18% 50%);
+  z-index: 5;
+  width: clamp(3rem, 6vw, 4.4rem);
+  height: clamp(1.75rem, 3.4vw, 2.55rem);
+  clip-path: polygon(0 50%, 18% 15%, 64% 0, 100% 50%, 64% 100%, 18% 85%);
   background:
-    linear-gradient(90deg, #dce7f5 0 15%, #6ec6ff 15% 72%, #50d29c 72%),
+    radial-gradient(circle at 62% 50%, rgba(255, 255, 255, 0.92) 0 7%, transparent 8%),
+    linear-gradient(90deg, #20344c 0 20%, #6ec6ff 20% 62%, #50d29c 62% 76%, #dce7f5 76%),
     #6ec6ff;
-  filter: drop-shadow(0 0 12px rgba(110, 198, 255, 0.5));
+  filter:
+    drop-shadow(0 0 14px rgba(110, 198, 255, 0.62))
+    drop-shadow(-0.55rem 0 8px rgba(80, 210, 156, 0.26));
   transition:
     left 95ms linear,
     top 95ms linear;
 }
 
+.player-ship::before,
+.player-ship::after {
+  position: absolute;
+  content: "";
+}
+
+.player-ship::before {
+  left: 37%;
+  top: 23%;
+  width: 25%;
+  height: 32%;
+  border-radius: 999px;
+  background: rgba(4, 16, 28, 0.52);
+  box-shadow: inset 0 0 10px rgba(191, 246, 255, 0.75);
+}
+
+.player-ship::after {
+  left: -18%;
+  top: 34%;
+  width: 28%;
+  height: 32%;
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(90deg, transparent, rgba(80, 210, 156, 0.8));
+  filter: blur(1px);
+}
+
 .boss-entity {
-  left: 78%;
-  top: 50%;
-  width: min(16rem, 30%);
-  height: 58%;
+  z-index: 4;
+  width: clamp(3.1rem, 8vw, 5.1rem);
+  max-width: calc(100% / 6 - 0.75rem);
+  height: clamp(3.1rem, 8vw, 5.1rem);
+  max-height: calc(100% / 3 - 0.75rem);
   border: 1px solid rgba(255, 170, 77, 0.42);
-  border-radius: 50% 14% 14% 50%;
+  border-radius: 42% 22% 22% 42%;
   background:
-    radial-gradient(circle at 28% 50%, rgba(255, 238, 194, 0.9) 0 8%, transparent 9%),
-    linear-gradient(90deg, rgba(255, 170, 77, 0.82), rgba(255, 111, 97, 0.72)),
+    radial-gradient(circle at 36% 50%, rgba(255, 238, 194, 0.9) 0 12%, transparent 13%),
+    linear-gradient(90deg, rgba(255, 170, 77, 0.82), rgba(255, 111, 97, 0.76) 68%, rgba(86, 32, 48, 0.88)),
     #2a1720;
   box-shadow:
     inset 0 0 24px rgba(255, 238, 194, 0.16),
     0 0 34px rgba(255, 111, 97, 0.26);
+  transition:
+    left 170ms ease-out,
+    top 170ms ease-out;
+}
+
+.boss-core,
+.boss-cannon {
+  position: absolute;
+  pointer-events: none;
+}
+
+.boss-core {
+  left: 34%;
+  top: 50%;
+  width: 34%;
+  height: 34%;
+  border-radius: 999px;
+  background: radial-gradient(circle, #fff1bd 0 25%, #ffb24f 26% 57%, rgba(255, 111, 97, 0.18) 58%);
+  box-shadow:
+    0 0 16px rgba(255, 178, 79, 0.78),
+    inset 0 0 10px rgba(255, 255, 255, 0.24);
+  transform: translate(-50%, -50%);
+}
+
+.boss-cannon {
+  left: 10%;
+  top: 50%;
+  width: 45%;
+  height: 18%;
+  border-radius: 999px 0 0 999px;
+  background: linear-gradient(90deg, #ffdf9a, #ff6f61);
+  box-shadow: 0 0 12px rgba(255, 111, 97, 0.52);
+  transform: translate(-50%, -50%);
 }
 
 .grid-projectile {
+  z-index: 6;
   width: 0.85rem;
   height: 0.28rem;
   border-radius: 999px;
@@ -2226,14 +2303,46 @@ select {
   box-shadow: 0 0 14px rgba(255, 170, 77, 0.8);
 }
 
+.grid-projectile.boss.wide {
+  width: min(7.5rem, 13%);
+  height: min(4.8rem, 24%);
+  border-radius: 999px 10px 10px 999px;
+  background: linear-gradient(90deg, rgba(255, 216, 166, 0), #ffd8a6 28%, #ff6f61);
+  box-shadow:
+    0 0 20px rgba(255, 170, 77, 0.86),
+    0 0 42px rgba(255, 111, 97, 0.36);
+}
+
+.boss-telegraph {
+  z-index: 2;
+  left: 0;
+  width: 100%;
+  border-block: 1px solid rgba(255, 170, 77, 0.42);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 170, 77, 0.16) 0 0.6rem,
+      rgba(255, 111, 97, 0.04) 0.6rem 1.15rem
+    );
+  box-shadow: inset 0 0 24px rgba(255, 111, 97, 0.16);
+  animation: boss-telegraph-pulse 420ms steps(2, end) infinite;
+}
+
+@keyframes boss-telegraph-pulse {
+  50% {
+    opacity: 0.36;
+  }
+}
+
 .grid-boss-result {
   position: absolute;
   inset: 0;
   display: grid;
   place-content: center;
-  gap: 0.3rem;
+  gap: 0.75rem;
   background: rgba(3, 8, 14, 0.72);
   text-align: center;
+  z-index: 10;
 }
 
 .grid-boss-result strong {
@@ -2245,6 +2354,19 @@ select {
 .grid-boss-result span {
   color: #a7b7c8;
   font-size: 0.9rem;
+}
+
+.grid-boss-home-button {
+  justify-self: center;
+  min-width: 8rem;
+  border-color: rgba(110, 198, 255, 0.45);
+  background: linear-gradient(135deg, #6ec6ff, #50d29c);
+  color: #06101a;
+  font-weight: 900;
+}
+
+.grid-boss-home-button.compact {
+  min-width: 5.5rem;
 }
 
 .grid-boss-controls {
