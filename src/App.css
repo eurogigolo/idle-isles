@@ -2324,8 +2324,8 @@ select {
 
 .grid-projectile {
   z-index: 6;
-  width: 0.85rem;
-  height: 0.28rem;
+  width: 1.15rem;
+  height: 0.42rem;
   border-radius: 999px;
 }
 
@@ -2340,8 +2340,8 @@ select {
 }
 
 .grid-projectile.boss.wide {
-  width: min(7.5rem, 13%);
-  height: min(4.8rem, 24%);
+  width: min(8.2rem, 15%);
+  height: min(5.2rem, 27%);
   border-radius: 999px 10px 10px 999px;
   background: linear-gradient(90deg, rgba(255, 216, 166, 0), #ffd8a6 28%, #ff6f61);
   box-shadow:
@@ -2410,6 +2410,28 @@ select {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.35rem;
+}
+
+.grid-boss-mute-button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  padding: 0;
+  border-color: rgba(110, 198, 255, 0.34);
+  background: rgba(9, 23, 36, 0.78);
+  color: #dce7f5;
+}
+
+.grid-boss-mute-button:hover {
+  border-color: rgba(110, 198, 255, 0.62);
+  color: #f2f7ff;
+}
+
+.grid-boss-mute-button.muted {
+  border-color: rgba(255, 111, 97, 0.38);
+  color: #ffd1cc;
 }
 
 .grid-boss-controls button {
