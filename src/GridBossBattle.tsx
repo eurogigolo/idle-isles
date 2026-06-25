@@ -38,7 +38,7 @@ interface BattleState {
   playerHp: number
   playerRow: number
   projectiles: Projectile[]
-  status: 'active' | 'won' | 'lost'
+  status: 'countdown' | 'active' | 'won' | 'lost'
   telegraphs: Telegraph[]
 }
 
@@ -57,6 +57,11 @@ const BOSS_SPECIAL_COOLDOWN_MS = 3200
 const BOSS_SPECIAL_TELEGRAPH_MS = 620
 const PANEL_LOCKDOWN_COOLDOWN_MS = 3000
 const MAX_DISABLED_PLAYER_PANELS = PLAYER_PANEL_COUNT - 1
+const COUNTDOWN_START = 3
+const PLAYER_HITBOX = { halfHeight: 0.24, halfWidth: 0.29 }
+const BOSS_HITBOX = { halfHeight: 0.28, halfWidth: 0.32 }
+const BOLT_HITBOX = { halfHeight: 0.055, halfWidth: 0.13 }
+const WIDE_HITBOX = { halfHeight: 0.28, halfWidth: 0.62 }
 
 const BOSS_CORE_PATTERN = [
   { col: 1, row: 1 },
@@ -98,9 +103,10 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     playerHp: PLAYER_MAX_HP,
     playerRow: 1,
     projectiles: [],
-    status: 'active',
+    status: 'countdown',
     telegraphs: [],
   })
+  const [countdown, setCountdown] = useState(COUNTDOWN_START)
   const [musicMuted, setMusicMuted] = useState(false)
   const pressedKeys = useRef(new Set<string>())
   const overlayRef = useRef<HTMLDivElement | null>(null)
@@ -121,6 +127,26 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   useEffect(() => {
     overlayRef.current?.focus()
   }, [])
+
+  useEffect(() => {
+    if (battle.status !== 'countdown') return
+
+    const intervalId = window.setInterval(() => {
+      setCountdown((current) => {
+        if (current <= 1) {
+          window.clearInterval(intervalId)
+          setBattle((activeBattle) =>
+            activeBattle.status === 'countdown' ? { ...activeBattle, status: 'active' } : activeBattle,
+          )
+          return 0
+        }
+
+        return current - 1
+      })
+    }, 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [battle.status])
 
   useEffect(() => {
     if (musicMuted || battle.status !== 'active') {
@@ -332,13 +358,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       }
 
       if (nextProjectile.owner === 'player') {
-        const bossPanelX = BOSS_ZONE_START + current.bossCoreCol
-        const hitBoss =
-          nextProjectile.row === current.bossCoreRow &&
-          nextProjectile.x >= bossPanelX - 0.42 &&
-          nextProjectile.x <= bossPanelX + 0.72
-
-        if (hitBoss) {
+        if (projectileHitsBoss(nextProjectile, current)) {
           bossHp -= 1
           continue
         }
@@ -347,13 +367,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         continue
       }
 
-      const collisionReach = nextProjectile.kind === 'wide' ? 0.9 : 0.42
-      const hitPlayer =
-        nextProjectile.row === current.playerRow &&
-        nextProjectile.x <= current.playerCol + 0.55 &&
-        nextProjectile.x >= current.playerCol - collisionReach
-
-      if (hitPlayer) {
+      if (projectileHitsPlayer(nextProjectile, current)) {
         playerHp -= nextProjectile.kind === 'wide' ? 2 : 1
         continue
       }
@@ -375,15 +389,21 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       const deltaMs = Math.min(40, now - previous)
       lastFrameAt.current = now
 
-      if (lastBossSpecialAt.current === 0) {
-        lastBossSpecialAt.current = now
-      }
-      if (lastPanelLockdownAt.current === 0) {
-        lastPanelLockdownAt.current = now
-      }
-
       setBattle((current) => {
         if (current.status !== 'active') return current
+
+        if (lastBossMoveAt.current === 0) {
+          lastBossMoveAt.current = now
+        }
+        if (lastBossShotAt.current === 0) {
+          lastBossShotAt.current = now
+        }
+        if (lastBossSpecialAt.current === 0) {
+          lastBossSpecialAt.current = now
+        }
+        if (lastPanelLockdownAt.current === 0) {
+          lastPanelLockdownAt.current = now
+        }
 
         let next = applyPlayerMovement(current, pressedKeys.current, now)
         next = applyPlayerFire(next, pressedKeys.current, now)
@@ -447,7 +467,10 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       ? 'Rift Warden signal broken. Return to command when ready.'
       : battle.status === 'lost'
         ? 'Ship systems disengaged. Return to command when ready.'
-        : 'Dodge fixed fire lanes before your panels burn out.'
+        : battle.status === 'countdown'
+          ? 'Grid sync starting.'
+          : 'Dodge fixed fire lanes before your panels burn out.'
+  const battleEnded = battle.status === 'won' || battle.status === 'lost'
 
   return (
     <div
@@ -529,7 +552,14 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
             />
           ))}
 
-          {battle.status !== 'active' && (
+          {battle.status === 'countdown' && (
+            <div className="grid-boss-countdown">
+              <strong>{countdown}</strong>
+              <span>Grid lock engaging</span>
+            </div>
+          )}
+
+          {battleEnded && (
             <div className="grid-boss-result">
               <strong>{resultTitle}</strong>
               <span>{resultText}</span>
@@ -552,7 +582,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           >
             {musicMuted ? <MicOff size={16} /> : <Mic size={16} />}
           </button>
-          {battle.status === 'active' ? (
+          {!battleEnded ? (
             <div className="grid-boss-controls" aria-label="Touch battle controls">
               <ControlButton label="Up" onHold={() => holdKey('ArrowUp')} onRelease={() => releaseKey('ArrowUp')} />
               <ControlButton
@@ -592,6 +622,13 @@ interface ControlButtonProps {
 interface BossMusicController {
   start: () => Promise<void>
   stop: () => void
+}
+
+interface Hitbox {
+  centerX: number
+  centerY: number
+  halfHeight: number
+  halfWidth: number
 }
 
 function ControlButton({ label, onHold, onRelease }: ControlButtonProps) {
@@ -654,6 +691,39 @@ function findNearestOpenPlayerPanel(
 
 function isPanelDisabled(disabledPanels: PlayerPanel[], col: number, row: number): boolean {
   return disabledPanels.some((panel) => panel.col === col && panel.row === row)
+}
+
+function projectileHitsBoss(projectile: Projectile, battle: BattleState): boolean {
+  return hitboxesOverlap(getProjectileHitbox(projectile), {
+    centerX: BOSS_ZONE_START + battle.bossCoreCol + 0.5,
+    centerY: battle.bossCoreRow + 0.5,
+    ...BOSS_HITBOX,
+  })
+}
+
+function projectileHitsPlayer(projectile: Projectile, battle: BattleState): boolean {
+  return hitboxesOverlap(getProjectileHitbox(projectile), {
+    centerX: battle.playerCol + 0.5,
+    centerY: battle.playerRow + 0.5,
+    ...PLAYER_HITBOX,
+  })
+}
+
+function getProjectileHitbox(projectile: Projectile): Hitbox {
+  const hitbox = projectile.kind === 'wide' ? WIDE_HITBOX : BOLT_HITBOX
+
+  return {
+    centerX: projectile.x + 0.5,
+    centerY: projectile.row + 0.5,
+    ...hitbox,
+  }
+}
+
+function hitboxesOverlap(a: Hitbox, b: Hitbox): boolean {
+  return (
+    Math.abs(a.centerX - b.centerX) <= a.halfWidth + b.halfWidth &&
+    Math.abs(a.centerY - b.centerY) <= a.halfHeight + b.halfHeight
+  )
 }
 
 function createBossMusic(): BossMusicController | null {

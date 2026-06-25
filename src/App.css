@@ -2370,7 +2370,8 @@ select {
   }
 }
 
-.grid-boss-result {
+.grid-boss-result,
+.grid-boss-countdown {
   position: absolute;
   inset: 0;
   display: grid;
@@ -2381,15 +2382,42 @@ select {
   z-index: 10;
 }
 
-.grid-boss-result strong {
+.grid-boss-result strong,
+.grid-boss-countdown strong {
   color: #f2f7ff;
   font-size: 2rem;
   line-height: 1;
 }
 
-.grid-boss-result span {
+.grid-boss-countdown strong {
+  font-size: clamp(4rem, 14vw, 8rem);
+  text-shadow:
+    0 0 24px rgba(110, 198, 255, 0.42),
+    0 0 48px rgba(255, 170, 77, 0.22);
+  animation: countdown-pulse 1s ease-out infinite;
+}
+
+.grid-boss-result span,
+.grid-boss-countdown span {
   color: #a7b7c8;
   font-size: 0.9rem;
+}
+
+@keyframes countdown-pulse {
+  0% {
+    opacity: 0.34;
+    transform: scale(0.84);
+  }
+
+  35% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  100% {
+    opacity: 0.72;
+    transform: scale(0.92);
+  }
 }
 
 .grid-boss-home-button {
