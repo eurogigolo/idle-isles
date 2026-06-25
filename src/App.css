@@ -2155,6 +2155,8 @@ select {
 }
 
 .grid-panel {
+  position: relative;
+  overflow: hidden;
   border-right: 1px solid rgba(136, 166, 196, 0.18);
   border-bottom: 1px solid rgba(136, 166, 196, 0.18);
 }
@@ -2177,6 +2179,40 @@ select {
   background:
     linear-gradient(135deg, rgba(255, 170, 77, 0.07), transparent 64%),
     rgba(255, 111, 97, 0.035);
+}
+
+.disabled-panel {
+  background:
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 111, 97, 0.24) 0 0.35rem,
+      rgba(6, 16, 26, 0.78) 0.35rem 0.78rem
+    ),
+    rgba(34, 8, 15, 0.86);
+  box-shadow:
+    inset 0 0 24px rgba(255, 111, 97, 0.22),
+    inset 0 0 0 1px rgba(255, 111, 97, 0.34);
+}
+
+.disabled-panel::before,
+.disabled-panel::after {
+  position: absolute;
+  content: "";
+  left: 50%;
+  top: 50%;
+  width: 80%;
+  height: 2px;
+  border-radius: 999px;
+  background: rgba(255, 216, 166, 0.48);
+  box-shadow: 0 0 10px rgba(255, 111, 97, 0.42);
+}
+
+.disabled-panel::before {
+  transform: translate(-50%, -50%) rotate(34deg);
+}
+
+.disabled-panel::after {
+  transform: translate(-50%, -50%) rotate(-34deg);
 }
 
 .boss-entity,

@@ -23,10 +23,16 @@ interface Telegraph {
   row: number
 }
 
+interface PlayerPanel {
+  col: number
+  row: number
+}
+
 interface BattleState {
   bossCoreCol: number
   bossCoreRow: number
   bossHp: number
+  disabledPanels: PlayerPanel[]
   playerCol: number
   playerHp: number
   playerRow: number
@@ -38,15 +44,18 @@ interface BattleState {
 const ROWS = 3
 const COLUMNS = 6
 const PLAYER_COLUMNS = 3
+const PLAYER_PANEL_COUNT = ROWS * PLAYER_COLUMNS
 const BOSS_ZONE_START = PLAYER_COLUMNS
 const PLAYER_MAX_HP = 6
-const BOSS_MAX_HP = 14
+const BOSS_MAX_HP = 20
 const PLAYER_MOVE_COOLDOWN_MS = 95
 const PLAYER_SHOT_COOLDOWN_MS = 240
 const BOSS_MOVE_COOLDOWN_MS = 560
 const BOSS_SHOT_COOLDOWN_MS = 760
 const BOSS_SPECIAL_COOLDOWN_MS = 3200
 const BOSS_SPECIAL_TELEGRAPH_MS = 620
+const PANEL_LOCKDOWN_COOLDOWN_MS = 3000
+const MAX_DISABLED_PLAYER_PANELS = PLAYER_PANEL_COUNT - 1
 
 const BOSS_CORE_PATTERN = [
   { col: 1, row: 1 },
@@ -57,6 +66,20 @@ const BOSS_CORE_PATTERN = [
   { col: 2, row: 0 },
   { col: 1, row: 1 },
   { col: 2, row: 2 },
+]
+
+const WIDE_ATTACK_ROWS = [0, 2, 1, 0, 2, 1]
+
+const PANEL_LOCKDOWN_PATTERN: PlayerPanel[] = [
+  { col: 1, row: 1 },
+  { col: 0, row: 0 },
+  { col: 2, row: 2 },
+  { col: 2, row: 0 },
+  { col: 0, row: 2 },
+  { col: 1, row: 0 },
+  { col: 1, row: 2 },
+  { col: 0, row: 1 },
+  { col: 2, row: 1 },
 ]
 
 const CONTROL_KEYS = new Set([
@@ -81,6 +104,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     bossCoreCol: 1,
     bossCoreRow: 1,
     bossHp: BOSS_MAX_HP,
+    disabledPanels: [],
     playerCol: 1,
     playerHp: PLAYER_MAX_HP,
     playerRow: 1,
@@ -99,7 +123,10 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
   const lastBossMoveAt = useRef(0)
   const lastBossShotAt = useRef(0)
   const lastBossSpecialAt = useRef(0)
+  const lastPanelLockdownAt = useRef(0)
   const bossPatternIndex = useRef(0)
+  const panelLockdownIndex = useRef(0)
+  const wideAttackIndex = useRef(0)
 
   useEffect(() => {
     overlayRef.current?.focus()
@@ -143,11 +170,15 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
     const colDelta = left ? -1 : right ? 1 : 0
     if (rowDelta === 0 && colDelta === 0) return current
 
+    const nextPlayerCol = clamp(current.playerCol + colDelta, 0, PLAYER_COLUMNS - 1)
+    const nextPlayerRow = clamp(current.playerRow + rowDelta, 0, ROWS - 1)
+    if (isPanelDisabled(current.disabledPanels, nextPlayerCol, nextPlayerRow)) return current
+
     lastMoveAt.current = now
     return {
       ...current,
-      playerCol: clamp(current.playerCol + colDelta, 0, PLAYER_COLUMNS - 1),
-      playerRow: clamp(current.playerRow + rowDelta, 0, ROWS - 1),
+      playerCol: nextPlayerCol,
+      playerRow: nextPlayerRow,
     }
   }
 
@@ -195,6 +226,8 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
 
     if (now - lastBossSpecialAt.current >= BOSS_SPECIAL_COOLDOWN_MS) {
       lastBossSpecialAt.current = now
+      const row = WIDE_ATTACK_ROWS[wideAttackIndex.current % WIDE_ATTACK_ROWS.length]
+      wideAttackIndex.current += 1
       return {
         ...current,
         telegraphs: [
@@ -202,7 +235,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           {
             fireAt: now + BOSS_SPECIAL_TELEGRAPH_MS,
             id: telegraphId.current++,
-            row: current.bossCoreRow,
+            row,
           },
         ],
       }
@@ -253,6 +286,28 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       ...current,
       projectiles,
       telegraphs: pending,
+    }
+  }
+
+  function applyPanelLockdown(current: BattleState, now: number): BattleState {
+    if (now - lastPanelLockdownAt.current < PANEL_LOCKDOWN_COOLDOWN_MS) return current
+    if (current.disabledPanels.length >= MAX_DISABLED_PLAYER_PANELS) return current
+
+    const panel = getNextPanelLockdownTarget(current.disabledPanels, panelLockdownIndex)
+    if (!panel) return current
+
+    lastPanelLockdownAt.current = now
+    const disabledPanels = [...current.disabledPanels, panel]
+    const playerPanelLocked = panel.col === current.playerCol && panel.row === current.playerRow
+    const fallbackPanel = playerPanelLocked
+      ? findNearestOpenPlayerPanel(current.playerCol, current.playerRow, disabledPanels)
+      : null
+
+    return {
+      ...current,
+      disabledPanels,
+      playerCol: fallbackPanel?.col ?? current.playerCol,
+      playerRow: fallbackPanel?.row ?? current.playerRow,
     }
   }
 
@@ -314,6 +369,9 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       if (lastBossSpecialAt.current === 0) {
         lastBossSpecialAt.current = now
       }
+      if (lastPanelLockdownAt.current === 0) {
+        lastPanelLockdownAt.current = now
+      }
 
       setBattle((current) => {
         if (current.status !== 'active') return current
@@ -323,6 +381,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         next = applyBossMovement(next, now)
         next = applyTelegraphs(next, now)
         next = applyBossFire(next, now)
+        next = applyPanelLockdown(next, now)
         next = applyProjectileMotion(next, deltaMs)
 
         if (next.bossHp <= 0) {
@@ -375,7 +434,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
       ? 'Rift Warden signal broken. Return to command when ready.'
       : battle.status === 'lost'
         ? 'Ship systems disengaged. Return to command when ready.'
-        : 'Dodge fixed fire lanes and punish the boss grid.'
+        : 'Dodge fixed fire lanes before your panels burn out.'
 
   return (
     <div
@@ -393,6 +452,7 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
           <div className="grid-boss-readout">
             <span>Hull {battle.playerHp}/{PLAYER_MAX_HP}</span>
             <span>Boss {battle.bossHp}/{BOSS_MAX_HP}</span>
+            <span>Panels {PLAYER_PANEL_COUNT - battle.disabledPanels.length}/{PLAYER_PANEL_COUNT}</span>
             {battle.status === 'active' && (
               <button className="grid-boss-retreat-button" onClick={retreat} type="button">
                 Retreat
@@ -409,9 +469,18 @@ export function GridBossBattle({ onComplete }: GridBossBattleProps) {
         <div className="grid-boss-arena">
           {Array.from({ length: ROWS * COLUMNS }, (_, index) => {
             const col = index % COLUMNS
+            const row = Math.floor(index / COLUMNS)
+            const isPlayerZone = col < PLAYER_COLUMNS
+            const isDisabled = isPlayerZone && isPanelDisabled(battle.disabledPanels, col, row)
             return (
               <div
-                className={col < PLAYER_COLUMNS ? 'grid-panel player-zone' : 'grid-panel boss-zone'}
+                className={[
+                  'grid-panel',
+                  isPlayerZone ? 'player-zone' : 'boss-zone',
+                  isDisabled ? 'disabled-panel' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
                 key={index}
               />
             )
@@ -514,6 +583,50 @@ function ControlButton({ label, onHold, onRelease }: ControlButtonProps) {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
+}
+
+function getNextPanelLockdownTarget(
+  disabledPanels: PlayerPanel[],
+  cursor: { current: number },
+): PlayerPanel | null {
+  for (let attempts = 0; attempts < PANEL_LOCKDOWN_PATTERN.length; attempts += 1) {
+    const index = (cursor.current + attempts) % PANEL_LOCKDOWN_PATTERN.length
+    const panel = PANEL_LOCKDOWN_PATTERN[index]
+    if (!isPanelDisabled(disabledPanels, panel.col, panel.row)) {
+      cursor.current = (index + 1) % PANEL_LOCKDOWN_PATTERN.length
+      return { ...panel }
+    }
+  }
+
+  return null
+}
+
+function findNearestOpenPlayerPanel(
+  currentCol: number,
+  currentRow: number,
+  disabledPanels: PlayerPanel[],
+): PlayerPanel | null {
+  const openPanels: PlayerPanel[] = []
+
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let col = 0; col < PLAYER_COLUMNS; col += 1) {
+      if (!isPanelDisabled(disabledPanels, col, row)) {
+        openPanels.push({ col, row })
+      }
+    }
+  }
+
+  openPanels.sort((a, b) => {
+    const aDistance = Math.abs(a.col - currentCol) + Math.abs(a.row - currentRow)
+    const bDistance = Math.abs(b.col - currentCol) + Math.abs(b.row - currentRow)
+    return aDistance - bDistance
+  })
+
+  return openPanels[0] ?? null
+}
+
+function isPanelDisabled(disabledPanels: PlayerPanel[], col: number, row: number): boolean {
+  return disabledPanels.some((panel) => panel.col === col && panel.row === row)
 }
 
 function gridPosition(col: number, row: number): CSSProperties {
