@@ -237,17 +237,22 @@ function App() {
     }
   }
 
-  async function handleChainToggle() {
-    if (chainMode) {
-      setChainMode(false)
-      setChainHasProfile(false)
-      setMossSessionReady(false)
-      setChainBossEncounterCost(null)
-      setGame(loadGame())
+  function handleLocalMode() {
+    if (!chainMode) {
       setNotice('Local v2 simulation active.')
       return
     }
 
+    setChainMode(false)
+    setChainHasProfile(false)
+    setMossSessionReady(false)
+    setChainBossEncounterCost(null)
+    setGame(loadGame())
+    setNotice('Local v2 simulation active.')
+  }
+
+  async function handleChainMode() {
+    if (chainMode) return
     if (!chainReady) {
       setNotice('Set VITE_IDLE_GALACTICA_ADDRESS and VITE_TRADE_RELAY_ADDRESS before using Chain mode.')
       return
@@ -737,27 +742,44 @@ function App() {
           <h1>Idle Galactica</h1>
         </div>
         <div className="chain-controls">
-          <div className="wallet-mode-switch" aria-label="Wallet mode">
+          <div className="play-mode-switch" aria-label="Play mode">
             <button
-              className={walletMode === 'injected' ? 'selected' : ''}
+              className={!chainMode ? 'selected' : ''}
               disabled={chainBusy}
-              onClick={() => selectWalletMode('injected')}
+              onClick={handleLocalMode}
               type="button"
             >
-              MetaMask
+              Local Mode
             </button>
             <button
-              className={walletMode === 'moss' ? 'selected' : ''}
-              disabled={chainBusy}
-              onClick={() => selectWalletMode('moss')}
+              className={chainMode ? 'selected' : ''}
+              disabled={chainBusy || !chainReady}
+              onClick={() => void handleChainMode()}
               type="button"
             >
-              MOSS
+              Chain Mode
             </button>
           </div>
-          <button disabled={chainBusy || !chainReady} onClick={() => void handleChainToggle()} type="button">
-            {chainMode ? 'Local Mode' : 'Chain Mode'}
-          </button>
+          {chainMode && (
+            <div className="wallet-mode-switch" aria-label="Wallet mode">
+              <button
+                className={walletMode === 'injected' ? 'selected' : ''}
+                disabled={chainBusy}
+                onClick={() => selectWalletMode('injected')}
+                type="button"
+              >
+                MetaMask
+              </button>
+              <button
+                className={walletMode === 'moss' ? 'selected' : ''}
+                disabled={chainBusy}
+                onClick={() => selectWalletMode('moss')}
+                type="button"
+              >
+                MOSS
+              </button>
+            </div>
+          )}
           {chainMode && (
             <button disabled={chainBusy} onClick={() => void connectAndSync()} type="button">
               <Wallet size={16} />
