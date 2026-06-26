@@ -372,6 +372,7 @@ function App() {
   async function repairChainHullForCombatIfNeeded(
     chain: ChainModule,
     activity: ActivityDefinition | null,
+    account?: Address,
   ): Promise<boolean> {
     const repairPlan = getChainCombatRepairPlan(activity)
     if (repairPlan <= 0) return false
@@ -380,7 +381,7 @@ function App() {
       if (walletMode === 'moss') {
         await chain.writeMossRepairHull(game.combatSettings.repairItemId)
       } else {
-        await chain.writeRepairHull(game.combatSettings.repairItemId)
+        await chain.writeRepairHull(game.combatSettings.repairItemId, account)
       }
     }
 
@@ -434,12 +435,12 @@ function App() {
         preview.cycles <= getClaimCycleCapacity(activeActivity, claimBatchCount)
 
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
           const settlementActivity = activeActivity && preview.cycles > 0 ? activeActivity : null
-          await repairChainHullForCombatIfNeeded(chain, settlementActivity)
+          await repairChainHullForCombatIfNeeded(chain, settlementActivity, account)
           if (settlementActivity?.group !== 'Combat' && activity.group === 'Combat') {
-            await repairChainHullForCombatIfNeeded(chain, activity)
+            await repairChainHullForCombatIfNeeded(chain, activity, account)
           }
 
           if (walletMode === 'moss') {
@@ -450,7 +451,7 @@ function App() {
             return chain.writeMossStartMission(activity.id)
           }
 
-          return chain.writeStartMission(activity.id)
+          return chain.writeStartMission(activity.id, account)
         },
         getMissionStartSuccessMessage(Boolean(game.activeMission), shouldClaimBeforeSwitch, switchWillClearBacklog, claimBatchCount),
       )
@@ -467,12 +468,12 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
-          await repairChainHullForCombatIfNeeded(chain, activeActivity)
+          await repairChainHullForCombatIfNeeded(chain, activeActivity, account)
           return walletMode === 'moss'
             ? chain.writeMossClaimMissionBatch(claimBatchCount)
-            : chain.writeClaimMission()
+            : chain.writeClaimMission(account)
         },
         claimBatchCount > 1 ? `Submitted ${claimBatchCount} claim batches.` : 'Mission cycles claimed.',
       )
@@ -491,10 +492,10 @@ function App() {
         preview.cycles <= getClaimCycleCapacity(activeActivity, claimBatchCount)
 
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
           if (preview.cycles > 0) {
-            await repairChainHullForCombatIfNeeded(chain, activeActivity)
+            await repairChainHullForCombatIfNeeded(chain, activeActivity, account)
           }
 
           if (walletMode === 'moss') {
@@ -505,7 +506,7 @@ function App() {
             return chain.writeMossStopMission()
           }
 
-          return chain.writeStopMission()
+          return chain.writeStopMission(account)
         },
         getMissionStopSuccessMessage(shouldClaimBeforeStop, stopWillClearBacklog, claimBatchCount),
       )
@@ -519,9 +520,9 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
-          return walletMode === 'moss' ? chain.writeMossEquipModule(itemId) : chain.writeEquipModule(itemId)
+          return walletMode === 'moss' ? chain.writeMossEquipModule(itemId) : chain.writeEquipModule(itemId, account)
         },
         `${ITEMS[itemId].name} installed.`,
       )
@@ -535,9 +536,9 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
-          return walletMode === 'moss' ? chain.writeMossUnequipModule(slot) : chain.writeUnequipModule(slot)
+          return walletMode === 'moss' ? chain.writeMossUnequipModule(slot) : chain.writeUnequipModule(slot, account)
         },
         `${formatModuleSlot(slot)} module removed.`,
       )
@@ -551,9 +552,9 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
-          return walletMode === 'moss' ? chain.writeMossRepairHull(itemId) : chain.writeRepairHull(itemId)
+          return walletMode === 'moss' ? chain.writeMossRepairHull(itemId) : chain.writeRepairHull(itemId, account)
         },
         `${ITEMS[itemId].name} used.`,
       )
@@ -567,11 +568,11 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
           return walletMode === 'moss'
             ? chain.writeMossTravelToSector(sectorId)
-            : chain.writeTravelToSector(sectorId)
+            : chain.writeTravelToSector(sectorId, account)
         },
         `Ship routed to ${getSectorById(sectorId).name}.`,
       )
@@ -589,7 +590,7 @@ function App() {
           const chain = await loadChain()
           return walletMode === 'moss'
             ? chain.writeMossBuyTradeRelayOrder(account, orderId)
-            : chain.writeBuyTradeRelayOrder(orderId)
+            : chain.writeBuyTradeRelayOrder(orderId, account)
         },
         'Trade Relay order filled.',
       )
@@ -608,7 +609,7 @@ function App() {
           const chain = await loadChain()
           return walletMode === 'moss'
             ? chain.writeMossCreateTradeRelayOrder(account, itemId, unitPrice)
-            : chain.writeCreateTradeRelayOrder(itemId, unitPrice)
+            : chain.writeCreateTradeRelayOrder(itemId, unitPrice, account)
         },
         `${ITEMS[itemId].name} listed on the Trade Relay.`,
       )
@@ -634,12 +635,12 @@ function App() {
     }
 
     void runChainAction(
-      async () => {
+      async (account) => {
         const chain = await loadChain()
         const hash =
           walletMode === 'moss'
             ? await chain.writeMossStartBossEncounter()
-            : await chain.writeStartBossEncounter()
+            : await chain.writeStartBossEncounter(account)
         setBossBattleId(Date.now())
         return hash
       },
@@ -667,11 +668,11 @@ function App() {
     if (chainMode) {
       if (!requireChainProfile()) return
       void runChainAction(
-        async () => {
+        async (account) => {
           const chain = await loadChain()
           return walletMode === 'moss'
             ? chain.writeMossCombatSettings(nextGame.combatSettings)
-            : chain.writeCombatSettings(nextGame.combatSettings)
+            : chain.writeCombatSettings(nextGame.combatSettings, account)
         },
         'Combat settings updated.',
       )
@@ -844,9 +845,9 @@ function App() {
               disabled={chainBusy}
               onClick={() =>
                 void runChainAction(
-                  async () => {
+                  async (account) => {
                     const chain = await loadChain()
-                    return walletMode === 'moss' ? chain.writeMossCreateProfile() : chain.writeCreateProfile()
+                    return walletMode === 'moss' ? chain.writeMossCreateProfile() : chain.writeCreateProfile(account)
                   },
                   'Ship profile created.',
                 )
