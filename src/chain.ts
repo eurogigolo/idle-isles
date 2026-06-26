@@ -83,6 +83,7 @@ interface BrowserClients {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const MARKET_READ_LIMIT = 120n
+const RECEIPT_TIMEOUT_MS = 180_000
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
 const MOSS_MAX_GAS_ALLOWANCE = parseEther('0.00004')
@@ -204,7 +205,15 @@ export function isChainModeReady(): boolean {
 }
 
 export async function connectWallet(): Promise<Address> {
-  return requestWalletAccount()
+  const provider = getEthereumProvider()
+  await ensureMegaEthTestnet(provider)
+  return requestWalletAccount(provider)
+}
+
+export async function ensureInjectedWalletReady(): Promise<Address> {
+  const provider = getEthereumProvider()
+  await ensureMegaEthTestnet(provider)
+  return (await getConnectedWalletAccount(provider)) ?? requestWalletAccount(provider)
 }
 
 export async function addMegaEthTestnet(): Promise<void> {
@@ -766,7 +775,7 @@ async function submitGameWrite(
     functionName: functionName as never,
     args: args as never,
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
   return hash
 }
 
@@ -798,7 +807,7 @@ async function submitTradeRelayWrite(
     functionName: functionName as never,
     args: args as never,
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
   return hash
 }
 
@@ -836,7 +845,7 @@ async function ensureTradeRelayApproval(preferredAccount?: Address): Promise<voi
     functionName: 'setApprovalForAll',
     args: [tradeRelayAddress, true],
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
 }
 
 async function ensureMossTradeRelayApproval(account: Address): Promise<void> {
@@ -995,6 +1004,7 @@ function isRecoverableMossSilentMessage(message: string): boolean {
 
 async function getBrowserClients(preferredAccount?: Address): Promise<BrowserClients> {
   const provider = getEthereumProvider()
+  await ensureMegaEthTestnet(provider)
   const account = preferredAccount ?? (await getConnectedWalletAccount(provider)) ?? (await requestWalletAccount(provider))
 
   return {
@@ -1018,6 +1028,40 @@ async function requestWalletAccount(provider = getEthereumProvider()): Promise<A
   return firstAccount
 }
 
+async function ensureMegaEthTestnet(provider: EthereumProvider): Promise<void> {
+  const chainId = await provider.request({ method: 'eth_chainId' })
+  if (normalizeChainId(chainId) === MEGAETH_CHAIN_ID_HEX.toLowerCase()) return
+
+  try {
+    await provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: MEGAETH_CHAIN_ID_HEX }],
+    })
+  } catch (error) {
+    if (getRpcErrorCode(error) === 4902) {
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [MEGAETH_TESTNET_PARAMS],
+      })
+      return
+    }
+
+    throw new Error('Switch MetaMask to MegaETH Testnet before using Chain mode.', { cause: error })
+  }
+}
+
+function normalizeChainId(chainId: unknown): string | null {
+  if (typeof chainId === 'string') return chainId.toLowerCase()
+  if (typeof chainId === 'number') return `0x${chainId.toString(16)}`
+  return null
+}
+
+function getRpcErrorCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'number' ? code : null
+}
+
 function getCachedWalletClient(provider: EthereumProvider): WalletClient {
   if (cachedBrowserProvider !== provider || !cachedWalletClient) {
     cachedBrowserProvider = provider
@@ -1025,6 +1069,13 @@ function getCachedWalletClient(provider: EthereumProvider): WalletClient {
   }
 
   return cachedWalletClient
+}
+
+async function waitForChainReceipt(hash: Hash): Promise<void> {
+  await publicClient.waitForTransactionReceipt({
+    hash,
+    timeout: RECEIPT_TIMEOUT_MS,
+  })
 }
 
 function getEthereumProvider(): EthereumProvider {

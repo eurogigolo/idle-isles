@@ -346,7 +346,19 @@ function App() {
     let account = chainAccount
     setChainBusy(true)
     try {
-      if (!account) {
+      if (walletMode === 'injected') {
+        const chain = await loadChain()
+        const readyAccount = await chain.ensureInjectedWalletReady()
+        if (account && !isSameAddress(account, readyAccount)) {
+          setChainAccount(readyAccount)
+          await syncChain(readyAccount, 'Wallet account changed; chain state synced.')
+          setNotice('MetaMask account changed. Review the synced profile, then try the action again.')
+          return
+        }
+
+        account = readyAccount
+        setChainAccount(account)
+      } else if (!account) {
         account = await connectSelectedWallet()
         setChainAccount(account)
       }
@@ -1721,6 +1733,10 @@ function getEventLogKind(entry: string): string {
     return 'ship'
   }
   return 'system'
+}
+
+function isSameAddress(left: Address, right: Address): boolean {
+  return left.toLowerCase() === right.toLowerCase()
 }
 
 function loadGame(): GameState {
