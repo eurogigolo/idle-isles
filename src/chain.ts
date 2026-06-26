@@ -83,6 +83,7 @@ interface BrowserClients {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const MARKET_READ_LIMIT = 120n
+const RECEIPT_TIMEOUT_MS = 180_000
 export const MEGAETH_CHAIN_ID_HEX = `0x${megaethTestnet.id.toString(16)}`
 export const MOSS_GAMEPLAY_SESSION_SECONDS = 24 * 60 * 60
 const MOSS_MAX_GAS_ALLOWANCE = parseEther('0.00004')
@@ -101,6 +102,8 @@ export const MEGAETH_TESTNET_PARAMS = {
 }
 
 let mossInitialisePromise: Promise<void> | null = null
+let cachedBrowserProvider: EthereumProvider | null = null
+let cachedWalletClient: WalletClient | null = null
 
 const IDLE_GALACTICA_ABI = parseAbi([
   'function BOSS_ENCOUNTER_COST() view returns (uint256)',
@@ -202,7 +205,15 @@ export function isChainModeReady(): boolean {
 }
 
 export async function connectWallet(): Promise<Address> {
-  return requestWalletAccount()
+  const provider = getEthereumProvider()
+  await ensureMegaEthTestnet(provider)
+  return requestWalletAccount(provider)
+}
+
+export async function ensureInjectedWalletReady(): Promise<Address> {
+  const provider = getEthereumProvider()
+  await ensureMegaEthTestnet(provider)
+  return (await getConnectedWalletAccount(provider)) ?? requestWalletAccount(provider)
 }
 
 export async function addMegaEthTestnet(): Promise<void> {
@@ -396,87 +407,87 @@ export async function readBossEncounterCost(): Promise<number | null> {
   }
 }
 
-export async function writeChainRequest(request: ChainWriteRequest): Promise<Hash> {
+export async function writeChainRequest(request: ChainWriteRequest, preferredAccount?: Address): Promise<Hash> {
   switch (request.functionName) {
     case 'createProfile':
-      return writeCreateProfile()
+      return writeCreateProfile(preferredAccount)
     case 'claimMission':
-      return submitGameWrite('claimMission', [])
+      return submitGameWrite('claimMission', [], preferredAccount)
     case 'stopMission':
-      return submitGameWrite('stopMission', [])
+      return submitGameWrite('stopMission', [], preferredAccount)
     case 'startGathering':
-      return submitGameWrite('startGathering', [Number(request.args?.[0] ?? 0)])
+      return submitGameWrite('startGathering', [Number(request.args?.[0] ?? 0)], preferredAccount)
     case 'startProduction':
-      return submitGameWrite('startProduction', [Number(request.args?.[0] ?? 0)])
+      return submitGameWrite('startProduction', [Number(request.args?.[0] ?? 0)], preferredAccount)
     case 'startCombat':
-      return submitGameWrite('startCombat', [Number(request.args?.[0] ?? 0)])
+      return submitGameWrite('startCombat', [Number(request.args?.[0] ?? 0)], preferredAccount)
     case 'startBossEncounter':
-      return submitGameWrite('startBossEncounter', [])
+      return submitGameWrite('startBossEncounter', [], preferredAccount)
     case 'equipModule':
-      return submitGameWrite('equipModule', [BigInt(request.args?.[0] as bigint)])
+      return submitGameWrite('equipModule', [BigInt(request.args?.[0] as bigint)], preferredAccount)
     case 'unequipModule':
-      return submitGameWrite('unequipModule', [Number(request.args?.[0] ?? 0)])
+      return submitGameWrite('unequipModule', [Number(request.args?.[0] ?? 0)], preferredAccount)
     case 'repairHull':
-      return submitGameWrite('repairHull', [BigInt(request.args?.[0] as bigint)])
+      return submitGameWrite('repairHull', [BigInt(request.args?.[0] as bigint)], preferredAccount)
     case 'travelToSector':
-      return submitGameWrite('travelToSector', [Number(request.args?.[0] ?? 0)])
+      return submitGameWrite('travelToSector', [Number(request.args?.[0] ?? 0)], preferredAccount)
     case 'setCombatSettings':
-      return submitGameWrite('setCombatSettings', request.args ?? [])
+      return submitGameWrite('setCombatSettings', request.args ?? [], preferredAccount)
   }
 }
 
-export async function writeCreateProfile(): Promise<Hash> {
-  return submitGameWrite('createProfile', [])
+export async function writeCreateProfile(preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('createProfile', [], preferredAccount)
 }
 
-export async function writeStartMission(activityId: ActivityId): Promise<Hash> {
+export async function writeStartMission(activityId: ActivityId, preferredAccount?: Address): Promise<Hash> {
   const activity = getContractActivity(activityId)
   if (!activity) throw new Error('This mission is not registered on-chain.')
 
   if (activity.kind === 'gathering') {
-    return submitGameWrite('startGathering', [activity.id])
+    return submitGameWrite('startGathering', [activity.id], preferredAccount)
   }
   if (activity.kind === 'production') {
-    return submitGameWrite('startProduction', [activity.id])
+    return submitGameWrite('startProduction', [activity.id], preferredAccount)
   }
-  return submitGameWrite('startCombat', [activity.id])
+  return submitGameWrite('startCombat', [activity.id], preferredAccount)
 }
 
-export async function writeStopMission(): Promise<Hash> {
-  return submitGameWrite('stopMission', [])
+export async function writeStopMission(preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('stopMission', [], preferredAccount)
 }
 
-export async function writeClaimMission(): Promise<Hash> {
-  return submitGameWrite('claimMission', [])
+export async function writeClaimMission(preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('claimMission', [], preferredAccount)
 }
 
-export async function writeStartBossEncounter(): Promise<Hash> {
-  return submitGameWrite('startBossEncounter', [])
+export async function writeStartBossEncounter(preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('startBossEncounter', [], preferredAccount)
 }
 
-export async function writeEquipModule(itemId: ItemId): Promise<Hash> {
-  return submitGameWrite('equipModule', [getContractItemId(itemId)])
+export async function writeEquipModule(itemId: ItemId, preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('equipModule', [getContractItemId(itemId)], preferredAccount)
 }
 
-export async function writeUnequipModule(slot: ModuleSlot): Promise<Hash> {
-  return submitGameWrite('unequipModule', [MODULE_SLOTS.indexOf(slot)])
+export async function writeUnequipModule(slot: ModuleSlot, preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('unequipModule', [MODULE_SLOTS.indexOf(slot)], preferredAccount)
 }
 
-export async function writeRepairHull(itemId: ItemId): Promise<Hash> {
-  return submitGameWrite('repairHull', [getContractItemId(itemId)])
+export async function writeRepairHull(itemId: ItemId, preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('repairHull', [getContractItemId(itemId)], preferredAccount)
 }
 
-export async function writeTravelToSector(sectorId: SectorId): Promise<Hash> {
-  return submitGameWrite('travelToSector', [getContractSectorId(sectorId)])
+export async function writeTravelToSector(sectorId: SectorId, preferredAccount?: Address): Promise<Hash> {
+  return submitGameWrite('travelToSector', [getContractSectorId(sectorId)], preferredAccount)
 }
 
-export async function writeCombatSettings(settings: CombatSettings): Promise<Hash> {
+export async function writeCombatSettings(settings: CombatSettings, preferredAccount?: Address): Promise<Hash> {
   return submitGameWrite('setCombatSettings', [
     settings.autoRepair,
     settings.stopAtHull,
     getContractItemId(settings.repairItemId),
     settings.maxRepairItemsPerClaim,
-  ])
+  ], preferredAccount)
 }
 
 export async function writeMossCreateProfile(): Promise<Hash> {
@@ -548,14 +559,18 @@ export async function writeMossTravelToSector(sectorId: SectorId): Promise<Hash>
   return writeMossGameContract('travelToSector', [getContractSectorId(sectorId)])
 }
 
-export async function writeBuyTradeRelayOrder(orderId: string): Promise<Hash> {
-  await ensureTradeRelayApproval()
-  return submitTradeRelayWrite('buy', [BigInt(orderId), 1n])
+export async function writeBuyTradeRelayOrder(orderId: string, preferredAccount?: Address): Promise<Hash> {
+  await ensureTradeRelayApproval(preferredAccount)
+  return submitTradeRelayWrite('buy', [BigInt(orderId), 1n], preferredAccount)
 }
 
-export async function writeCreateTradeRelayOrder(itemId: ItemId, unitPrice: number): Promise<Hash> {
-  await ensureTradeRelayApproval()
-  return submitTradeRelayWrite('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)])
+export async function writeCreateTradeRelayOrder(
+  itemId: ItemId,
+  unitPrice: number,
+  preferredAccount?: Address,
+): Promise<Hash> {
+  await ensureTradeRelayApproval(preferredAccount)
+  return submitTradeRelayWrite('createOrder', [getContractItemId(itemId), 1n, BigInt(unitPrice)], preferredAccount)
 }
 
 export async function writeMossBuyTradeRelayOrder(account: Address, orderId: string): Promise<Hash> {
@@ -746,8 +761,12 @@ function createEmptyChainState(marketOrders: MarketOrder[]): GameState {
   return game
 }
 
-async function submitGameWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
-  const { account, walletClient } = await getBrowserClients()
+async function submitGameWrite(
+  functionName: string,
+  args: readonly unknown[],
+  preferredAccount?: Address,
+): Promise<Hash> {
+  const { account, walletClient } = await getBrowserClients(preferredAccount)
   const hash = await walletClient.writeContract({
     account,
     chain: null,
@@ -756,7 +775,7 @@ async function submitGameWrite(functionName: string, args: readonly unknown[]): 
     functionName: functionName as never,
     args: args as never,
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
   return hash
 }
 
@@ -774,8 +793,12 @@ async function writeMossGameContract(
   })
 }
 
-async function submitTradeRelayWrite(functionName: string, args: readonly unknown[]): Promise<Hash> {
-  const { account, walletClient } = await getBrowserClients()
+async function submitTradeRelayWrite(
+  functionName: string,
+  args: readonly unknown[],
+  preferredAccount?: Address,
+): Promise<Hash> {
+  const { account, walletClient } = await getBrowserClients(preferredAccount)
   const hash = await walletClient.writeContract({
     account,
     chain: null,
@@ -784,7 +807,7 @@ async function submitTradeRelayWrite(functionName: string, args: readonly unknow
     functionName: functionName as never,
     args: args as never,
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
   return hash
 }
 
@@ -801,8 +824,8 @@ async function writeMossTradeRelayContract(
   })
 }
 
-async function ensureTradeRelayApproval(): Promise<void> {
-  const { account, walletClient } = await getBrowserClients()
+async function ensureTradeRelayApproval(preferredAccount?: Address): Promise<void> {
+  const { account, walletClient } = await getBrowserClients(preferredAccount)
   const gameAddress = requireIdleGalacticaAddress()
   const tradeRelayAddress = requireTradeRelayAddress()
   const approved = await publicClient.readContract({
@@ -822,7 +845,7 @@ async function ensureTradeRelayApproval(): Promise<void> {
     functionName: 'setApprovalForAll',
     args: [tradeRelayAddress, true],
   })
-  await publicClient.waitForTransactionReceipt({ hash })
+  await waitForChainReceipt(hash)
 }
 
 async function ensureMossTradeRelayApproval(account: Address): Promise<void> {
@@ -981,22 +1004,78 @@ function isRecoverableMossSilentMessage(message: string): boolean {
 
 async function getBrowserClients(preferredAccount?: Address): Promise<BrowserClients> {
   const provider = getEthereumProvider()
-  const transport = custom(provider)
-  const account = preferredAccount ?? (await requestWalletAccount())
+  await ensureMegaEthTestnet(provider)
+  const account = preferredAccount ?? (await getConnectedWalletAccount(provider)) ?? (await requestWalletAccount(provider))
 
   return {
     account,
-    walletClient: createWalletClient({ transport }),
+    walletClient: getCachedWalletClient(provider),
   }
 }
 
-async function requestWalletAccount(): Promise<Address> {
-  const accounts = await getEthereumProvider().request({ method: 'eth_requestAccounts' })
+async function getConnectedWalletAccount(provider: EthereumProvider): Promise<Address | null> {
+  const accounts = await provider.request({ method: 'eth_accounts' })
+  const firstAccount = Array.isArray(accounts) ? toAddress(String(accounts[0] ?? '')) : null
+  return firstAccount
+}
+
+async function requestWalletAccount(provider = getEthereumProvider()): Promise<Address> {
+  const accounts = await provider.request({ method: 'eth_requestAccounts' })
   const firstAccount = Array.isArray(accounts) ? toAddress(String(accounts[0] ?? '')) : null
   if (!firstAccount) {
     throw new Error('No wallet account was returned.')
   }
   return firstAccount
+}
+
+async function ensureMegaEthTestnet(provider: EthereumProvider): Promise<void> {
+  const chainId = await provider.request({ method: 'eth_chainId' })
+  if (normalizeChainId(chainId) === MEGAETH_CHAIN_ID_HEX.toLowerCase()) return
+
+  try {
+    await provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: MEGAETH_CHAIN_ID_HEX }],
+    })
+  } catch (error) {
+    if (getRpcErrorCode(error) === 4902) {
+      await provider.request({
+        method: 'wallet_addEthereumChain',
+        params: [MEGAETH_TESTNET_PARAMS],
+      })
+      return
+    }
+
+    throw new Error('Switch MetaMask to MegaETH Testnet before using Chain mode.', { cause: error })
+  }
+}
+
+function normalizeChainId(chainId: unknown): string | null {
+  if (typeof chainId === 'string') return chainId.toLowerCase()
+  if (typeof chainId === 'number') return `0x${chainId.toString(16)}`
+  return null
+}
+
+function getRpcErrorCode(error: unknown): number | null {
+  if (!error || typeof error !== 'object' || !('code' in error)) return null
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'number' ? code : null
+}
+
+function getCachedWalletClient(provider: EthereumProvider): WalletClient {
+  if (cachedBrowserProvider !== provider || !cachedWalletClient) {
+    cachedBrowserProvider = provider
+    cachedWalletClient = createWalletClient({ transport: custom(provider) })
+  }
+
+  return cachedWalletClient
+}
+
+async function waitForChainReceipt(hash: Hash): Promise<void> {
+  await publicClient.waitForTransactionReceipt({
+    hash,
+    timeout: RECEIPT_TIMEOUT_MS,
+  })
 }
 
 function getEthereumProvider(): EthereumProvider {
